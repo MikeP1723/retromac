@@ -12,6 +12,9 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/retromac"
 cp Support/Info.plist "$app/Contents/Info.plist"
+if [[ -n "${RETROMAC_VERSION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $RETROMAC_VERSION" "$app/Contents/Info.plist"
+fi
 # Into Contents/Resources so Bundle.main finds them (SwiftPM's resource bundle would
 # have to sit at the .app root, which breaks code signing).
 cp Sources/RetromacCore/Resources/*.json "$app/Contents/Resources/"

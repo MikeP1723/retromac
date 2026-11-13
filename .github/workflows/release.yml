@@ -1,0 +1,27 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - name: Build and zip
+        run: |
+          RETROMAC_VERSION="${GITHUB_REF_NAME#v}" scripts/bundle.sh
+          ditto -c -k --keepParent build/retromac.app retromac.zip
+      - name: Release manifest
+        run: |
+          sha=$(shasum -a 256 retromac.zip | cut -d' ' -f1)
+          swift run retromac-tool release-manifest \
+            --version "${GITHUB_REF_NAME#v}" \
+            --zip-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/retromac.zip" \
+            --sha "$sha" > manifest.json
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" retromac.zip manifest.json --generate-notes
