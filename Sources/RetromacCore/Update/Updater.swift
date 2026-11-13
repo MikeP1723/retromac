@@ -27,17 +27,17 @@ public struct UpdateReport: Equatable, Sendable {
 
 /// Applies component updates: stage everything first, then swap each into place with the
 /// current copy kept in `paths.previous` as a one-generation rollback.
-public struct Updater {
+public struct Updater: Sendable {
     let paths: Paths
     let installer: Installer
     let applier: Applier
     /// App bundle names checked for running before anything is touched.
     let apps: [String]
-    let isRunning: (String) -> Bool
+    let isRunning: @Sendable (String) -> Bool
     let fileOps: any FileOps
 
     public init(paths: Paths, installer: Installer, applier: Applier, apps: [String],
-                isRunning: @escaping (String) -> Bool, fileOps: any FileOps = RealFileOps()) {
+                isRunning: @escaping @Sendable (String) -> Bool, fileOps: any FileOps = RealFileOps()) {
         self.paths = paths
         self.installer = installer
         self.applier = applier
