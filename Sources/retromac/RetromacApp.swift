@@ -59,6 +59,14 @@ struct WizardView: View {
                         .fontWeight(step == model.step ? .semibold : .regular)
                         .foregroundStyle(step == model.step ? .primary : .secondary)
                 }
+                Spacer()
+                Button {
+                    updates.showSheet = true
+                    Task { await updates.check(force: true) }
+                } label: {
+                    Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(model.busy || updates.busy)
             }
             .padding()
             Divider()
