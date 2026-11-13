@@ -10,7 +10,8 @@ Get a Mac from nothing to "controller in hand, games on the TV" through one guid
 
 - Personal tool, hosted for free public use on GitHub.
 - Complies with GNU license terms (see Licensing).
-- Name: **retromac**.
+- Name: **retromac**. Bundle ID: `petersoft.retromac`.
+- An update process and wizard covers retromac itself, the emulators, cores, and other downloaded dependencies.
 - No arcade.
 - Scope is classic home consoles: NES, SNES, Genesis, N64, Saturn, PS1, PS2, Wii, Wii U, Switch, Switch 2, Xbox. Switch 2 and Switch are adjusted below, with the reasons given.
 
@@ -48,7 +49,7 @@ What would change my mind: if you're comfortable with the takedown risk to the w
 - Arcade, Switch 2, Xbox 360, PS3.
 - Remote or internet access to the share.
 - A custom launcher or scraper (ES-DE handles both).
-- Mac App Store distribution, notarization, or in-app auto-update.
+- Mac App Store distribution, notarization, Sparkle, and silent auto-update. Updates always go through the update wizard.
 
 ## Anti-goals
 
@@ -104,10 +105,12 @@ retromac.app (SwiftUI, arm64, macOS 14+, ad-hoc signed)
 Shared Swift package `RetromacCore`: profile model, renderers, identifiers, DAT index
 ```
 
-- **No privileged daemon and no Sparkle.** The app checks the GitHub Releases API for new versions.
+- **No privileged daemon and no Sparkle.** Updates are covered in the Updates section below.
 - **Distribution:** build from source, plus an unsigned release `.zip`. On macOS 15 and later the README must explain System Settings › Privacy & Security › Open Anyway.
 - **TCC gotcha:** ad-hoc rebuilds change the cdhash and reset privacy grants. The default library is `~/retromac/` because it isn't TCC-protected. External drives work but re-prompt after updates.
-- **Manifest entries** carry version, upstream URL, sha256, SPDX license, `arch`, an optional `rosetta: true`, and the config schema version.
+- **Manifest entries** carry version, upstream URL, sha256, SPDX license, `arch`, an optional `rosetta: true`, and an optional `upstream` source used for bump automation.
+- **The manifest itself** carries `manifestVersion`, which increments on every release, and `minAppVersion`.
+- **Download host allowlist.** Download hosts must be on an allowlist compiled into the app: `buildbot.libretro.com`, `gitlab.com`, `github.com`, plus other official project domains as they're added. A tampered release manifest therefore can't redirect downloads anywhere else without an app update.
 
 ## The wizard
 
@@ -180,6 +183,50 @@ For each file:
 
 Files are copied, the hash is verified, and only then is the original removed. A SQLite journal lets a crashed ingest resume. Converting a 4 GB disc image to CHD or RVZ takes minutes, so conversions run through a bounded queue and show progress in the app.
 
+## Updates
+
+**There's one channel: GitHub Releases on `MikeP1723/retromac`.** Each release carries two assets:
+- `retromac.zip`, the app.
+- `manifest.json`, the bundled manifest plus a `retromac` self-entry (version, zip URL, sha256).
+
+A manifest bump (a new RetroArch, a new core build, a new DAT source later) is therefore just a release. No separate update server exists.
+
+**Update wizard (in-app):**
+1. **Check.** The wizard runs on launch at most once every 24 hours, and on demand via *Check for Updates…* (⌘U).
+2. **Validate the release manifest.** It fetches the latest release's `manifest.json` and runs the same policy as CI on it: license allowlist, arch rule, sha format, https, and host allowlist. Any violation rejects the whole manifest.
+3. **Diff against what's installed.** `~/retromac/state.json` records the version, sha, and *managed* flag of each component retromac installed. The diff shows:
+   - each component as installed → available
+   - a red flag when the **license changed**
+   - a warning when the new build **needs Rosetta**
+   - a blocker when the app is older than `minAppVersion` ("update retromac first")
+4. **Pick and apply.**
+   - Updates are refused while RetroArch or any emulator is running.
+   - Components are staged (downloaded and sha-verified) before anything is swapped.
+   - The current version is moved to `~/retromac/previous/` (one generation is kept), and the new one is moved into place.
+   - If anything fails mid-swap, the old version goes back.
+   - Finally, configs are re-rendered and re-applied (with backups as usual), so new emulator versions get any renderer changes.
+5. **Rollback.** Each component has a *Revert* action that swaps `previous/` back. Config backups restore the same way as in the main wizard.
+
+**Unmanaged apps.** These are apps that were already installed before retromac (for example, your own RetroArch). They show up with an **Adopt** option. Adopting moves the existing copy to `previous/`, and from then on retromac manages it. Without adopting, retromac never replaces them.
+
+**Self-update.**
+1. Download `retromac.zip` and verify its sha against the release manifest.
+2. Check that the bundle ID is `petersoft.retromac` and that the version matches.
+3. Quit.
+4. A small detached script waits for the process to exit, moves the old app to `previous/`, and relaunches the new one.
+
+Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed again. TCC grants do reset, as noted under Architecture.
+
+**Keeping pins current (maintainer side).**
+- A weekly GitHub Action runs `retromac-tool check-upstream`.
+  - It queries each component's `upstream` source (GitHub releases, GitLab releases, or the libretro stable index).
+  - It downloads newer builds, computes their shas, bumps `manifestVersion`, and opens a PR.
+  - The PR has a checklist covering the license (unchanged?), the arch, and the release notes.
+- **Gotcha:** PRs opened with `GITHUB_TOKEN` don't trigger other workflows. The bump job therefore runs `swift test` and `verify-manifest` itself before opening the PR.
+- Merging the PR and tagging `vX.Y.Z` runs the release workflow, which builds, zips, writes the release manifest, and publishes.
+
+**Trust model.** A release manifest is exactly as trusted as Mike's GitHub account, which is the same trust the app binary already depends on. The compiled-in host allowlist and license policy limit the damage from a bad manifest.
+
 ## Phasing
 
 1. **Spine:**
@@ -188,11 +235,12 @@ Files are copied, the hash is verified, and only then is the original removed. A
    - RetroArch autoconfig for Xbox, DualSense, and Switch Pro pads.
    - License and arch CI.
    - Systems: NES, SNES, Genesis, N64.
-2. **Librarian:** cartridge systems, then Saturn and PS1 with CHD.
-3. **Share.**
-4. **Standalones, native first:** Dolphin (GameCube/Wii), xemu, then PS2.
-5. **Rosetta tier and detect-only:** Cemu, then the Ryubing integration.
-6. **Polish:** guided BT pairing, boot-to-ES-DE, release check.
+2. **Updates:** release pipeline, update wizard, self-update, rollback, upstream-bump Action.
+3. **Librarian:** cartridge systems, then Saturn and PS1 with CHD. Redump DAT refresh joins the update wizard.
+4. **Share.**
+5. **Standalones, native first:** Dolphin (GameCube/Wii), xemu, then PS2.
+6. **Rosetta tier and detect-only:** Cemu, then the Ryubing integration.
+7. **Polish:** guided BT pairing, boot-to-ES-DE, player order, audio output.
 
 ## Testing
 

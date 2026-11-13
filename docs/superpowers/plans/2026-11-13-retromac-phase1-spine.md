@@ -8,9 +8,9 @@
 
 **Tech Stack:** Swift 6 (tools-version 6.0), SwiftPM, SwiftUI, GameController.framework, CryptoKit, Swift Testing (`import Testing`). There are **zero third-party packages.** System tools: `/usr/bin/hdiutil`, `/usr/bin/tar` (bsdtar: zip and 7z), `/usr/bin/ditto`, `/usr/bin/codesign`.
 
-**Spec:** `docs/superpowers/specs/2026-11-13-retromac-design.md`. This plan covers the spec's **Phase 1 (Spine)** only. Phases 2–6 (librarian, share, standalones, Rosetta/detect-only, polish) each get their own plan.
+**Spec:** `docs/superpowers/specs/2026-11-13-retromac-design.md`. This plan covers the spec's **Phase 1 (Spine)** only. Phases 2–7 (updates, librarian, share, standalones, Rosetta/detect-only, polish) each get their own plan. Phase 2 is `2026-11-13-retromac-phase2-updates.md`.
 
-**Deferred from the spec's Phase 1 wizard to Phase 6 (Polish):** player-order confirmation, audio output selection, boot-to-ES-DE, and guided BT pairing. Phase 1 only *detects* controllers that are already paired.
+**Deferred from the spec's Phase 1 wizard to Phase 7 (Polish):** player-order confirmation, audio output selection, boot-to-ES-DE, and guided BT pairing. Phase 1 only *detects* controllers that are already paired.
 
 ## Global Constraints
 
@@ -25,7 +25,8 @@
 - The repo, tests, and README contain no ROM, BIOS, firmware, key, or No-Intro/Redump DAT content or links. Fixtures are synthetic bytes.
 - retromac state lives at `~/retromac/` (`profile.json`, `state.json`, `backups/`, `Library/`).
 - Every write to an existing file is preceded by a timestamped backup. Writes are refused while RetroArch or ES-DE is running.
-- Product name in UI and identifiers: `retromac` (lowercase). Bundle ID: `local.retromac`.
+- Product name in UI and identifiers: `retromac` (lowercase). Bundle ID: `petersoft.retromac`. GitHub repo: `MikeP1723/retromac`.
+- Manifest download hosts must be in `ManifestPolicy.allowedHosts` = `buildbot.libretro.com`, `gitlab.com`, `github.com`. Task 7 may add another host only if it's the official project's own domain.
 - Generated whole files start with a "Managed by retromac — edits will be overwritten" comment in the file's comment syntax.
 
 ## Review Focus
@@ -52,10 +53,10 @@
   - `enum SystemID: String, Codable, CaseIterable, Sendable { case nes, snes, genesis, n64 }`
   - `enum Arch: String, Codable, Sendable { case arm64, universal, x86_64 }`
   - `struct AppEntry: Codable, Equatable, Sendable { id: String; version: String; url: URL; sha256: String; license: String; arch: Arch; rosetta: Bool; appName: String; bundleID: String }` (`appName` is e.g. `"RetroArch.app"`. Format is always dmg.)
-  - `struct CoreEntry: Codable, Equatable, Sendable { id: String; system: SystemID; libraryName: String; file: String; url: URL; sha256: String; license: String; arch: Arch; rosetta: Bool }` (`file` is the dylib name inside the archive. Archive format comes from the URL extension, `.zip` or `.7z`.)
-  - `struct Manifest: Codable, Equatable, Sendable { schemaVersion: Int; apps: [AppEntry]; cores: [CoreEntry]; static func bundled() throws -> Manifest; func core(for: SystemID) -> CoreEntry? }`
+  - `struct CoreEntry: Codable, Equatable, Sendable { id: String; version: String; system: SystemID; libraryName: String; file: String; url: URL; sha256: String; license: String; arch: Arch; rosetta: Bool }` (`file` is the dylib name inside the archive. Archive format comes from the URL extension, `.zip` or `.7z`.)
+  - `struct Manifest: Codable, Equatable, Sendable { schemaVersion: Int; manifestVersion: Int; minAppVersion: String; apps: [AppEntry]; cores: [CoreEntry]; static func bundled() throws -> Manifest; func core(for: SystemID) -> CoreEntry? }`
   - `enum LicensePolicy { static let runtimeAllowed: Set<String>; static let vendoredAllowed: Set<String> }`
-  - `enum ManifestPolicy { static func violations(_ m: Manifest) -> [String] }` (empty means compliant)
+  - `enum ManifestPolicy { static let allowedHosts: Set<String>; static func violations(_ m: Manifest) -> [String] }` (empty means compliant)
   - `enum Resources { static func url(_ name: String, ext: String) -> URL? }` checks `Bundle.main` first, then `Bundle.module`. **Gotcha:** SwiftPM's `Bundle.module` looks for `retromac_RetromacCore.bundle` at the `.app` *root*, which breaks codesign. The app bundle copies the JSON resources into `Contents/Resources` directly (Task 8), so `Bundle.main` must be tried first.
   - `struct Paths: Sendable { init(home: URL, applications: URL = URL(filePath: "/Applications")) }` with `retromacRoot` (`~/retromac`), `profile`, `state`, `backups`, `defaultLibraryRoot` (`~/retromac/Library`), `retroarchSupport` (`~/Library/Application Support/RetroArch`), `retroarchConfig` (`…/config/retroarch.cfg`), `retroarchCores` (`…/cores`), `retroarchAutoconfigMFi` (`…/autoconfig/mfi`), `func coreOverride(libraryName: String) -> URL` (`…/config/<name>/<name>.cfg`), `globalShaderPreset` (`…/config/global.slangp`), `retroarchShadersSlang` (`…/shaders/shaders_slang`), `esdeSettings` (`~/ES-DE/settings/es_settings.xml`), `esdeCustomSystems` (`~/ES-DE/custom_systems/es_systems.xml`), `applications`. Task 7 verifies the RetroArch and ES-DE paths against a real install. If any differ, that task changes them here.
 
@@ -84,8 +85,12 @@
     #expect(ManifestPolicy.violations(m) == ["mesen: sha256 must be 64 lowercase hex chars"])
 }
 @Test func rejectsNonHTTPS() {
-    var m = Manifest.fixture(); m.apps[0].url = URL(string: "http://example.org/a.dmg")!
+    var m = Manifest.fixture(); m.apps[0].url = URL(string: "http://buildbot.libretro.com/a.dmg")!
     #expect(ManifestPolicy.violations(m) == ["retroarch: url must be https"])
+}
+@Test func rejectsUnlistedHost() {
+    var m = Manifest.fixture(); m.cores[0].url = URL(string: "https://evil.example/mesen.zip")!
+    #expect(ManifestPolicy.violations(m) == ["mesen: host evil.example not in allowlist"])
 }
 @Test func vendoredAllowlistExcludesGPL2Only() {
     #expect(!LicensePolicy.vendoredAllowed.contains("GPL-2.0-only"))
@@ -99,11 +104,11 @@
 }
 ```
 
-`Manifest.fixture()` lives in `Tests/RetromacCoreTests/Fixtures.swift`. It contains one app `retroarch` (`universal`, `GPL-3.0-or-later`, `https://example.org/RetroArch.dmg`, sha of 64 `a`s, appName `RetroArch.app`, bundleID `com.libretro.dist.RetroArch`), one app `esde` (`arm64`, `MIT`, appName `ES-DE.app`, bundleID `org.es-de.frontend`), and one core per system: `mesen` / `Mesen` / `mesen_libretro.dylib`, `bsnes` / `bsnes` / `bsnes_libretro.dylib`, `blastem` / `BlastEm` / `blastem_libretro.dylib`, `mupen64plus_next` / `Mupen64Plus-Next` / `mupen64plus_next_libretro.dylib`. Every core is `arm64`, `GPL-3.0-or-later`, with zip URLs on `https://example.org/`. Later tasks reuse it.
+`Manifest.fixture()` lives in `Tests/RetromacCoreTests/Fixtures.swift`. It has `schemaVersion: 1`, `manifestVersion: 1`, and `minAppVersion: "0.1.0"`. It contains one app `retroarch` (`universal`, `GPL-3.0-or-later`, `https://buildbot.libretro.com/fixture/RetroArch.dmg`, sha of 64 `a`s, appName `RetroArch.app`, bundleID `com.libretro.dist.RetroArch`), one app `esde` (`arm64`, `MIT`, `https://gitlab.com/fixture/ES-DE.dmg`, appName `ES-DE.app`, bundleID `org.es-de.frontend`), and one core per system (each with version `"1.0"`): `mesen` / `Mesen` / `mesen_libretro.dylib`, `bsnes` / `bsnes` / `bsnes_libretro.dylib`, `blastem` / `BlastEm` / `blastem_libretro.dylib`, `mupen64plus_next` / `Mupen64Plus-Next` / `mupen64plus_next_libretro.dylib`. Every core is `arm64`, `GPL-3.0-or-later`, with zip URLs under `https://buildbot.libretro.com/fixture/`. Later tasks reuse it.
 
 - [ ] **Step 3: Run `swift test`.** Expected: FAIL to compile (types undefined).
 
-- [ ] **Step 4: Implement the Produces types.** Violation strings are exactly `"<id>: <reason>"` as asserted. Run checks in the order license, arch, sha, url, and report all violations. `bundled()` decodes `Resources.url("manifest", ext: "json")` and throws `CocoaError(.fileNoSuchFile)` if it's missing. That's expected until Task 7.
+- [ ] **Step 4: Implement the Produces types.** Violation strings are exactly `"<id>: <reason>"` as asserted. Run checks in the order license, arch, sha, https, host, and report all violations. The host check is an exact match on `url.host`. `bundled()` decodes `Resources.url("manifest", ext: "json")` and throws `CocoaError(.fileNoSuchFile)` if it's missing. That's expected until Task 7.
 
 - [ ] **Step 5: Run `swift test`.** Expected: all pass.
 
@@ -429,19 +434,22 @@ The result is sorted by `url.path` so output is deterministic.
   - `enum SHA256File { static func hex(of: URL) throws -> String }`. Streams in 1 MiB chunks with CryptoKit.
   - `enum InstallError: Error, Equatable { case checksumMismatch(id: String, expected: String, actual: String); case commandFailed(String, Int32, String); case appNotFoundInImage(String); case fileNotFoundInArchive(String) }`
   - `struct InstallReport: Equatable, Sendable { var installed: [String]; var skipped: [String]; var warnings: [String] }`
+  - `struct InstallState: Codable, Equatable, Sendable { struct App: Codable, Equatable, Sendable { var version: String; var sha256: String?; var managed: Bool }; struct Core: Codable, Equatable, Sendable { var version: String; var sha256: String; var file: String }; var manifestVersion: Int; var apps: [String: App]; var cores: [String: Core]; static func load(from: URL) throws -> InstallState; func save(to: URL) throws }`. `load` returns an empty state (`manifestVersion: 0`) when the file is missing. Phase 2's updater depends on this shape.
   - `struct Installer { init(manifest: Manifest, paths: Paths, downloader: Downloader, runner: CommandRunner); func install(systems: Set<SystemID>) async throws -> InstallReport }`
 
 **Behavior:**
 - **Apps:**
-  - If `paths.applications/<appName>` exists, the app is `skipped`. If its `CFBundleShortVersionString` differs from `version`, append the warning `"<id>: installed <v>, manifest pins <version>; leaving installed copy"`. The app is never replaced.
+  - If `paths.applications/<appName>` exists, the app is `skipped`. If its `CFBundleShortVersionString` differs from `version`, append the warning `"<id>: installed <v>, manifest pins <version>; leaving installed copy"`. The app is never replaced. If state has no entry for it yet, record `App(version: <installed v>, sha256: nil, managed: false)`.
+  - When retromac installs the app itself, record `App(version:, sha256:, managed: true)`.
+  - After a successful run, set `state.manifestVersion = manifest.manifestVersion`.
   - Otherwise: download to a temp dir, then verify sha.
   - Mount with `hdiutil attach -nobrowse -readonly -mountpoint <tmp>/mnt <dmg>`.
   - Run `ditto <mnt>/<appName> <applications>/<appName>`.
   - `hdiutil detach <mnt>` runs in a `defer`.
 - **Cores**, for selected systems only:
-  - Skip when `state.json` (`{"cores": {id: sha256}}`) already records this sha and the dylib exists.
+  - Skip when `InstallState.cores[id].sha256` equals the entry sha and the dylib exists.
   - Otherwise: download, verify sha, run `/usr/bin/tar -xf <archive> -C <tmp>/x`, and find `<file>` recursively. If it's missing, throw `fileNotFoundInArchive`.
-  - Move it to `paths.retroarchCores/<file>`, then record the sha in `state.json`.
+  - Move it to `paths.retroarchCores/<file>`, then record `Core(version:, sha256:, file:)` in `InstallState`.
 - The temp dir (`FileManager.default.url(for: .itemReplacementDirectory, …)`) is removed in a `defer` on every path. Nothing is written to `applications` or `retroarchCores` before the sha is verified.
 - No quarantine stripping is needed: `URLSession` downloads in a non-sandboxed app don't carry `com.apple.quarantine`. Task 9 verifies this with `xattr`.
 
@@ -457,8 +465,8 @@ The result is sorted by `url.path` so output is deterministic.
 }
 @Test func secondRunSkipsInstalledCore() async throws { /* install twice → second report.skipped == ["mesen"] */ }
 @Test func missingFileInArchiveThrows() async throws { /* core.file = "other.dylib" → fileNotFoundInArchive("other.dylib") */ }
-@Test func installsAppFromDmg() async throws { /* applications = temp dir; app entry Fake.app → temp/Fake.app/Contents/Info.plist exists; no volume left mounted (`hdiutil info` output doesn't contain mountpoint) */ }
-@Test func existingAppIsNeverReplaced() async throws { /* pre-create temp/Fake.app with version 0.9 → skipped == ["fake"], warnings == ["fake: installed 0.9, manifest pins 1.0; leaving installed copy"], file unchanged */ }
+@Test func installsAppFromDmg() async throws { /* applications = temp dir; app entry Fake.app → temp/Fake.app/Contents/Info.plist exists; no volume left mounted (`hdiutil info` output doesn't contain mountpoint); state.apps["fake"] == .init(version: "1.0", sha256: <dmg sha>, managed: true) */ }
+@Test func existingAppIsNeverReplaced() async throws { /* pre-create temp/Fake.app with version 0.9 → skipped == ["fake"], warnings == ["fake: installed 0.9, manifest pins 1.0; leaving installed copy"], file unchanged; state.apps["fake"] == .init(version: "0.9", sha256: nil, managed: false) */ }
 @Test func onlySelectedSystemsInstalled() async throws { /* systems [.nes] with cores for nes+snes → only mesen installed */ }
 ```
 
@@ -495,6 +503,7 @@ This task touches the network and installs real apps under a **throwaway home an
     #expect(ManifestPolicy.violations(m).isEmpty)
     #expect(Set(m.cores.map(\.system)) == Set(SystemID.allCases))
     #expect(Set(m.apps.map(\.id)) == ["retroarch", "esde"])
+    #expect(m.manifestVersion == 1); #expect(m.minAppVersion == "0.1.0")
 }
 ```
 
@@ -566,7 +575,7 @@ This task touches the network and installs real apps under a **throwaway home an
 3. Copy the binary, `Support/Info.plist`, and `Sources/RetromacCore/Resources/*.json` into `Contents/Resources`.
 4. `codesign --force --sign - build/retromac.app`
 
-`Info.plist`: `CFBundleIdentifier` `local.retromac`, `CFBundleExecutable` `retromac`, `CFBundleName` `retromac`, `CFBundlePackageType` `APPL`, `LSMinimumSystemVersion` `14.0`, `CFBundleShortVersionString` `0.1.0`.
+`Info.plist`: `CFBundleIdentifier` `petersoft.retromac`, `CFBundleExecutable` `retromac`, `CFBundleName` `retromac`, `CFBundlePackageType` `APPL`, `LSMinimumSystemVersion` `14.0`, `CFBundleShortVersionString` `0.1.0`.
 
 - [ ] **Step 1: Implement the Produces types and views.**
 - [ ] **Step 2: Run `swift build` and `swift test`.** Expected: build succeeds, all tests pass.
