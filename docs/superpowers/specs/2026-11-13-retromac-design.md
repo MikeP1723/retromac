@@ -236,7 +236,7 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
    - License and arch CI.
    - Systems: NES, SNES, Genesis, N64.
 2. **Updates:** release pipeline, update wizard, self-update, rollback, upstream-bump Action.
-3. **Librarian:** cartridge systems, then Saturn and PS1 with CHD. Redump DAT refresh joins the update wizard.
+3. **Librarian:** cartridge systems, then Saturn and PS1 with CHD. Redump DAT refresh joins the update wizard. It also adds a **Games** wizard step where users drag and drop ROM files, folders or archives. A shared `Importer` in `RetromacCore` handles both the drop and the share inbox: it detects the system, identifies the game against the DATs, and files it (Mike, 2026-11-13: done properly with DAT matching in Phase 3, not header-only in Phase 1).
 4. **Share.**
 5. **Standalones, native first:** Dolphin (GameCube/Wii), xemu, then PS2.
 6. **Rosetta tier and detect-only:** Cemu, then the Ryubing integration.
@@ -261,3 +261,11 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
 
 1. **Switch is detect-and-configure only.** retromac never downloads a Switch emulator and never handles keys or firmware.
 2. **PS2 uses official PCSX2 under Rosetta** until an official arm64 build ships. ARMSX2 stays a possible one-line manifest swap later.
+3. **Cores trust the libretro host** (decided during Phase 1, 2026-11-13). libretro publishes macOS cores only at a mutable `nightly/…/latest/` URL. Apps stay sha-pinned. Cores may omit `sha256` only when hosted on `buildbot.libretro.com`, and the actual sha is recorded in `state.json` on install.
+
+## Findings from Phase 1 verification
+
+- **RetroArch registers every mfi pad as "mFi Controller".** Per-device autoconfig therefore can't work. Face-button policy and hotkeys are written as `retroarch.cfg` player binds instead. The "label" policy applies only when every detected pad is Xbox-style.
+- **ES-DE 3.5.0's `CFBundleIdentifier` is its version string.** Running-app checks match by app bundle name instead.
+- **ES-DE's dmg carries a license agreement.** The installer answers it, since `hdiutil -quiet` silently declines it.
+- **Shaders ship inside RetroArch's `assets.zip` and are extracted on first launch.** A game launched as RetroArch's very first run may start without its shader.

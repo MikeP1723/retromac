@@ -10,6 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-13-retromac-design.md` (section "Updates"). **Requires Phase 1 complete:** `Manifest`, `ManifestPolicy`, `Paths`, `Installer`, `InstallState`, `Applier`, `ProfileRenderer`, `BackupStore`, `retromac-tool`, `scripts/bundle.sh`.
 
+> **Revisit before executing.** Phase 1 changed several assumptions this plan was written against (see the spec's "Findings from Phase 1 verification" and the Phase 1 ledger rulings):
+> - `AppEntry.bundleID` was removed, so running-app checks use app bundle names (`apps:`), not `bundleIDs:`.
+> - Core `sha256` is optional. Unpinned cores can't be diffed by sha, so the planner needs a "refresh unpinned cores" rule.
+> - `CommandRunner.run` gained an `input:` parameter.
+
 ## Global Constraints
 
 - Phase 1's Global Constraints all still apply: arm64, zero third-party deps, SPDX headers, license allowlists, host allowlist, no ROM/BIOS/firmware/key content, bundle ID `petersoft.retromac`.

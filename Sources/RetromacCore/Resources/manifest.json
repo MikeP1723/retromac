@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": 1,
+  "minAppVersion": "0.1.0",
+  "apps": [
+    {
+      "id": "retroarch",
+      "version": "1.22.2",
+      "url": "https://buildbot.libretro.com/stable/1.22.2/apple/osx/universal/RetroArch_Metal.dmg",
+      "sha256": "81b79121ba26d539064ae13b4d0419a120c3d165afbe656cf5f5412b15fdb434",
+      "license": "GPL-3.0-or-later",
+      "arch": "universal",
+      "rosetta": false,
+      "appName": "RetroArch.app"
+    },
+    {
+      "id": "esde",
+      "version": "3.5.0",
+      "url": "https://gitlab.com/es-de/emulationstation-de/-/package_files/357717468/download",
+      "sha256": "060bd289fa17f8f07bac2eb688698047f7be79b80495983f08580b5f1a046e1e",
+      "license": "MIT",
+      "arch": "arm64",
+      "rosetta": false,
+      "appName": "ES-DE.app"
+    }
+  ],
+  "cores": [
+    { "id": "mesen", "version": "0.9.9", "system": "nes", "libraryName": "Mesen", "file": "mesen_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/mesen_libretro.dylib.zip", "sha256": null, "license": "GPL-3.0-or-later", "arch": "arm64", "rosetta": false },
+    { "id": "bsnes", "version": "115", "system": "snes", "libraryName": "bsnes", "file": "bsnes_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/bsnes_libretro.dylib.zip", "sha256": null, "license": "GPL-3.0-only", "arch": "arm64", "rosetta": false },
+    { "id": "blastem", "version": "v0.6.3-pre", "system": "genesis", "libraryName": "BlastEm", "file": "blastem_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/blastem_libretro.dylib.zip", "sha256": null, "license": "GPL-3.0-or-later", "arch": "arm64", "rosetta": false },
+    { "id": "mupen64plus_next", "version": "1.0", "system": "n64", "libraryName": "Mupen64Plus-Next", "file": "mupen64plus_next_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/mupen64plus_next_libretro.dylib.zip", "sha256": null, "license": "GPL-2.0-or-later", "arch": "arm64", "rosetta": false }
+  ]
+}
