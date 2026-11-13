@@ -27,11 +27,16 @@ public struct InstallState: Codable, Equatable, Sendable {
         public var version: String
         public var sha256: String
         public var file: String
+        /// CRC32 of the installed dylib, compared against libretro's .index-extended.
+        public var crc32: String?
     }
 
     public var manifestVersion: Int
     public var apps: [String: App]
     public var cores: [String: Core]
+    /// One rollback generation, written by the updater.
+    public var previousApps: [String: App]?
+    public var previousCores: [String: Core]?
 
     public static func load(from url: URL) throws -> InstallState {
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -114,7 +119,7 @@ public struct Installer: Sendable {
                 report.skipped.append(core.id)
                 continue
             }
-            var actual = ""
+            var actual = "", crc = ""
             try await withTempDir { tmp in
                 let archive = try await fetch(core.url, id: core.id, sha256: core.sha256, into: tmp)
                 actual = try SHA256File.hex(of: archive)
@@ -124,11 +129,12 @@ public struct Installer: Sendable {
                 guard let found = Self.find(core.file, under: extracted) else {
                     throw InstallError.fileNotFoundInArchive(core.file)
                 }
+                crc = try CRC32.hex(of: found)
                 try fm.createDirectory(at: paths.retroarchCores, withIntermediateDirectories: true)
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
                 try fm.moveItem(at: found, to: target)
             }
-            state.cores[core.id] = .init(version: core.version, sha256: actual, file: core.file)
+            state.cores[core.id] = .init(version: core.version, sha256: actual, file: core.file, crc32: crc)
             try state.save(to: paths.state)
             report.installed.append(core.id)
         }

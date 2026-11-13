@@ -77,7 +77,8 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
     #expect(report.installed == ["mesen"])
     #expect(try read(paths.retroarchCores.appending(path: "fake_libretro.dylib")) == "core")
     let state = try InstallState.load(from: paths.state)
-    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib"))
+    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib",
+                                          crc32: "6b8d854f"))
     #expect(state.manifestVersion == 3)
 }
 @Test func shaMismatchInstallsNothing() async throws {

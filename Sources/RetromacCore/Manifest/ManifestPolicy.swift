@@ -37,6 +37,11 @@ public enum ManifestPolicy {
             out += transport(core.id, core.url)
             out += unsafe(core.id, ["file": core.file, "libraryName": core.libraryName])
         }
+        if let app = m.retromac {
+            if !isSHA256(app.sha256) { out.append("retromac: sha256 must be 64 lowercase hex chars") }
+            out += transport("retromac", app.url)
+            if app.url.host() != "github.com" { out.append("retromac: url host must be github.com") }
+        }
         return out
     }
 

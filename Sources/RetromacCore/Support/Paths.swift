@@ -15,6 +15,10 @@ public struct Paths: Sendable {
     public var state: URL { retromacRoot.appending(path: "state.json") }
     public var backups: URL { retromacRoot.appending(path: "backups") }
     public var defaultLibraryRoot: URL { retromacRoot.appending(path: "Library") }
+    /// The rollback slot: one previous generation per updated component.
+    public var previous: URL { retromacRoot.appending(path: "previous") }
+    /// The manifest the current install was last updated to.
+    public var appliedManifest: URL { retromacRoot.appending(path: "manifest.json") }
 
     public var retroarchSupport: URL { home.appending(path: "Library/Application Support/RetroArch") }
     public var retroarchConfig: URL { retroarchSupport.appending(path: "config/retroarch.cfg") }
