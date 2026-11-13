@@ -3,6 +3,23 @@ import Foundation
 import Testing
 @testable import RetromacCore
 
+/// Serves local fixture files for https URLs, so tests run under the real ManifestPolicy.
+final class FixtureDownloader: Downloader, @unchecked Sendable {
+    private let lock = NSLock()
+    private var files: [URL: URL] = [:]
+
+    func serve(_ local: URL, host: String = "buildbot.libretro.com") -> URL {
+        let url = URL(string: "https://\(host)/fixture/\(UUID().uuidString)/\(local.lastPathComponent)")!
+        lock.withLock { files[url] = local }
+        return url
+    }
+
+    func download(_ url: URL, to dest: URL) async throws {
+        guard let local = lock.withLock({ files[url] }) else { throw URLError(.fileDoesNotExist) }
+        try FileManager.default.copyItem(at: local, to: dest)
+    }
+}
+
 /// Zip containing `name` with `bytes`, built with the same bsdtar the installer extracts with.
 func makeCoreZip(in dir: URL, name: String = "fake_libretro.dylib", bytes: String = "core") throws -> URL {
     let staging = dir.appending(path: "staging-\(UUID().uuidString)")
@@ -27,18 +44,20 @@ func writePlist(version: String, to app: URL) throws {
     try plist.write(to: url)
 }
 
-func coreEntry(_ url: URL, id: String = "mesen", system: SystemID = .nes, file: String = "fake_libretro.dylib") throws -> CoreEntry {
-    CoreEntry(id: id, version: "1.0", system: system, libraryName: "Mesen", file: file, url: url,
-              sha256: try SHA256File.hex(of: url), license: "GPL-3.0-or-later", arch: .arm64, rosetta: false)
+let host = FixtureDownloader()
+
+func coreEntry(_ local: URL, id: String = "mesen", system: SystemID = .nes, file: String = "fake_libretro.dylib") throws -> CoreEntry {
+    CoreEntry(id: id, version: "1.0", system: system, libraryName: "Mesen", file: file, url: host.serve(local),
+              sha256: try SHA256File.hex(of: local), license: "GPL-3.0-or-later", arch: .arm64, rosetta: false)
 }
 
-func appEntry(_ url: URL, version: String = "1.0") throws -> AppEntry {
-    AppEntry(id: "fake", version: version, url: url, sha256: try SHA256File.hex(of: url), license: "MIT",
-             arch: .arm64, rosetta: false, appName: "Fake.app", bundleID: "test.fake")
+func appEntry(_ local: URL, version: String = "1.0") throws -> AppEntry {
+    AppEntry(id: "fake", version: version, url: host.serve(local, host: "github.com"), sha256: try SHA256File.hex(of: local),
+             license: "MIT", arch: .arm64, rosetta: false, appName: "Fake.app", bundleID: "test.fake")
 }
 
 func installer(_ m: Manifest, _ paths: Paths) -> Installer {
-    Installer(manifest: m, paths: paths, downloader: URLSessionDownloader(), runner: ProcessRunner())
+    Installer(manifest: m, paths: paths, downloader: host, runner: ProcessRunner())
 }
 
 func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
@@ -52,15 +71,15 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
     #expect(report.installed == ["mesen"])
     #expect(try read(paths.retroarchCores.appending(path: "fake_libretro.dylib")) == "core")
     let state = try InstallState.load(from: paths.state)
-    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256, file: "fake_libretro.dylib"))
+    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib"))
     #expect(state.manifestVersion == 3)
 }
 @Test func shaMismatchInstallsNothing() async throws {
     let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
     var entry = try coreEntry(makeCoreZip(in: dir))
-    let actual = entry.sha256
+    let actual = entry.sha256!
     entry.sha256 = String(repeating: "0", count: 64)
-    await #expect(throws: InstallError.checksumMismatch(id: "mesen", expected: entry.sha256, actual: actual)) {
+    await #expect(throws: InstallError.checksumMismatch(id: "mesen", expected: String(repeating: "0", count: 64), actual: actual)) {
         try await installer(manifest(cores: [entry]), paths).install(systems: [.nes])
     }
     #expect(!FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "fake_libretro.dylib").path))
@@ -119,4 +138,39 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
         try await installer(manifest(apps: [app], cores: [core]), paths).install(systems: [.nes])
     }
     #expect(try InstallState.load(from: paths.state).apps["fake"]?.managed == true)
+}
+@Test func installRejectsPolicyViolationBeforeDownloading() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let entry = try coreEntry(makeCoreZip(in: dir), file: "../evil.dylib")
+    await #expect(throws: InstallError.policy(["mesen: file ../evil.dylib is not a single path component"])) {
+        try await installer(manifest(cores: [entry]), paths).install(systems: [.nes])
+    }
+    #expect(!FileManager.default.fileExists(atPath: paths.retroarchSupport.path))
+}
+@Test func unpinnedCoreInstallsAndRecordsActualSha() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let zip = try makeCoreZip(in: dir)
+    var entry = try coreEntry(zip)
+    entry.sha256 = nil
+    _ = try await installer(manifest(cores: [entry]), paths).install(systems: [.nes])
+    #expect(try InstallState.load(from: paths.state).cores["mesen"]?.sha256 == SHA256File.hex(of: zip))
+    #expect(try await installer(manifest(cores: [entry]), paths).install(systems: [.nes]).skipped == ["mesen"])
+}
+@Test func symlinkInArchiveIsRejected() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let staging = dir.appending(path: "s")
+    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(atPath: staging.appending(path: "fake_libretro.dylib").path, withDestinationPath: "/etc/hosts")
+    let zip = dir.appending(path: "link.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "fake_libretro.dylib"])
+    await #expect(throws: InstallError.fileNotFoundInArchive("fake_libretro.dylib")) {
+        try await installer(manifest(cores: [try coreEntry(zip)]), paths).install(systems: [.nes])
+    }
+}
+@Test func urlSessionDownloaderRefusesNonHTTPS() async throws {
+    let dir = try makeTempDir()
+    try write("x", to: dir.appending(path: "a"))
+    await #expect(throws: URLError.self) {
+        try await URLSessionDownloader().download(dir.appending(path: "a"), to: dir.appending(path: "b"))
+    }
 }

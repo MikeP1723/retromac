@@ -34,3 +34,23 @@ import Testing
     #expect(!LicensePolicy.vendoredAllowed.contains("GPL-2.0-only"))
     #expect(LicensePolicy.runtimeAllowed.contains("GPL-2.0-only"))
 }
+@Test func allowsUnpinnedCoreOnBuildbot() {
+    var m = Manifest.fixture(); m.cores[0].sha256 = nil
+    #expect(ManifestPolicy.violations(m).isEmpty)
+}
+@Test func rejectsUnpinnedCoreOffBuildbot() {
+    var m = Manifest.fixture(); m.cores[0].sha256 = nil
+    m.cores[0].url = URL(string: "https://github.com/x/mesen.zip")!
+    #expect(ManifestPolicy.violations(m) == ["mesen: sha256 may be omitted only for cores on buildbot.libretro.com"])
+}
+@Test func rejectsUnsafePathComponents() {
+    var m = Manifest.fixture()
+    m.cores[0].file = "../evil.dylib"
+    m.cores[1].libraryName = "a/b"
+    m.apps[0].appName = ".hidden.app"
+    #expect(ManifestPolicy.violations(m) == [
+        "retroarch: appName .hidden.app is not a single path component",
+        "mesen: file ../evil.dylib is not a single path component",
+        "bsnes: libraryName a/b is not a single path component",
+    ])
+}

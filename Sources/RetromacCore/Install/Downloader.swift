@@ -9,6 +9,7 @@ public struct URLSessionDownloader: Downloader {
     public init() {}
 
     public func download(_ url: URL, to dest: URL) async throws {
+        guard url.scheme == "https" else { throw URLError(.unsupportedURL, userInfo: [NSURLErrorFailingURLErrorKey: url]) }
         let (tmp, response) = try await URLSession.shared.download(from: url)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse, userInfo: [NSURLErrorFailingURLErrorKey: url])

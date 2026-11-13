@@ -26,6 +26,7 @@ public struct AppEntry: Codable, Equatable, Sendable {
 }
 
 /// A libretro core; `file` is the dylib inside the .zip/.7z at `url`.
+/// `sha256` is nil for cores libretro publishes only at a mutable `latest/` URL.
 public struct CoreEntry: Codable, Equatable, Sendable {
     public var id: String
     public var version: String
@@ -33,13 +34,13 @@ public struct CoreEntry: Codable, Equatable, Sendable {
     public var libraryName: String
     public var file: String
     public var url: URL
-    public var sha256: String
+    public var sha256: String?
     public var license: String
     public var arch: Arch
     public var rosetta: Bool
 
     public init(id: String, version: String, system: SystemID, libraryName: String, file: String,
-                url: URL, sha256: String, license: String, arch: Arch, rosetta: Bool) {
+                url: URL, sha256: String?, license: String, arch: Arch, rosetta: Bool) {
         self.id = id; self.version = version; self.system = system; self.libraryName = libraryName
         self.file = file; self.url = url; self.sha256 = sha256; self.license = license
         self.arch = arch; self.rosetta = rosetta

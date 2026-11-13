@@ -6,6 +6,7 @@ public enum InstallError: Error, Equatable {
     case commandFailed(String, Int32, String)
     case appNotFoundInImage(String)
     case fileNotFoundInArchive(String)
+    case policy([String])
 }
 
 public struct InstallReport: Equatable, Sendable {
@@ -61,6 +62,8 @@ public struct Installer: Sendable {
     }
 
     public func install(systems: Set<SystemID>) async throws -> InstallReport {
+        let violations = ManifestPolicy.violations(manifest)
+        guard violations.isEmpty else { throw InstallError.policy(violations) }
         var state = try InstallState.load(from: paths.state)
         var report = InstallReport()
         let fm = FileManager.default
@@ -95,12 +98,15 @@ public struct Installer: Sendable {
 
         for core in manifest.cores where systems.contains(core.system) {
             let target = paths.retroarchCores.appending(path: core.file)
-            if state.cores[core.id]?.sha256 == core.sha256 && fm.fileExists(atPath: target.path) {
+            if let installed = state.cores[core.id], fm.fileExists(atPath: target.path),
+               core.sha256 == nil || core.sha256 == installed.sha256 {
                 report.skipped.append(core.id)
                 continue
             }
+            var actual = ""
             try await withTempDir { tmp in
                 let archive = try await fetch(core.url, id: core.id, sha256: core.sha256, into: tmp)
+                actual = try SHA256File.hex(of: archive)
                 let extracted = tmp.appending(path: "x")
                 try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
                 try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", extracted.path])
@@ -111,7 +117,7 @@ public struct Installer: Sendable {
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
                 try fm.moveItem(at: found, to: target)
             }
-            state.cores[core.id] = .init(version: core.version, sha256: core.sha256, file: core.file)
+            state.cores[core.id] = .init(version: core.version, sha256: actual, file: core.file)
             try state.save(to: paths.state)
             report.installed.append(core.id)
         }
@@ -121,13 +127,15 @@ public struct Installer: Sendable {
         return report
     }
 
-    /// Downloads into `dir` and verifies the checksum before anything else sees the file.
-    func fetch(_ url: URL, id: String, sha256: String, into dir: URL) async throws -> URL {
-        let dest = dir.appending(path: url.lastPathComponent)
+    /// Downloads into `dir` and verifies the checksum (when pinned) before anything else sees the file.
+    func fetch(_ url: URL, id: String, sha256: String?, into dir: URL) async throws -> URL {
+        let dest = dir.appending(path: "download")
         try await downloader.download(url, to: dest)
-        let actual = try SHA256File.hex(of: dest)
-        guard actual == sha256 else {
-            throw InstallError.checksumMismatch(id: id, expected: sha256, actual: actual)
+        if let sha256 {
+            let actual = try SHA256File.hex(of: dest)
+            guard actual == sha256 else {
+                throw InstallError.checksumMismatch(id: id, expected: sha256, actual: actual)
+            }
         }
         return dest
     }
@@ -144,10 +152,15 @@ public struct Installer: Sendable {
         return plist?["CFBundleShortVersionString"] as? String
     }
 
+    /// Finds a regular file (never a symlink) named `name` anywhere under `dir`.
     static func find(_ name: String, under dir: URL) -> URL? {
-        let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: keys)
         while let url = walker?.nextObject() as? URL {
-            if url.lastPathComponent == name { return url }
+            guard url.lastPathComponent == name,
+                  let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            return url
         }
         return nil
     }

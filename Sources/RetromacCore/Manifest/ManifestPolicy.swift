@@ -14,29 +14,62 @@ public enum LicensePolicy {
 
 public enum ManifestPolicy {
     public static let allowedHosts: Set<String> = ["buildbot.libretro.com", "gitlab.com", "github.com"]
+    /// libretro publishes macOS cores only at mutable `latest/` URLs, so these may be unpinned.
+    static let unpinnedCoreHost = "buildbot.libretro.com"
 
     public static func violations(_ m: Manifest) -> [String] {
-        let entries = m.apps.map { ($0.id, $0.license, $0.arch, $0.rosetta, $0.sha256, $0.url) }
-            + m.cores.map { ($0.id, $0.license, $0.arch, $0.rosetta, $0.sha256, $0.url) }
         var out: [String] = []
-        for (id, license, arch, rosetta, sha, url) in entries {
-            if !LicensePolicy.runtimeAllowed.contains(license) {
-                out.append("\(id): license \(license) not in runtime allowlist")
+        for app in m.apps {
+            out += common(app.id, app.license, app.arch, app.rosetta, app.url)
+            if !isSHA256(app.sha256) { out.append("\(app.id): sha256 must be 64 lowercase hex chars") }
+            out += transport(app.id, app.url)
+            out += unsafe(app.id, ["appName": app.appName])
+        }
+        for core in m.cores {
+            out += common(core.id, core.license, core.arch, core.rosetta, core.url)
+            if let sha = core.sha256 {
+                if !isSHA256(sha) { out.append("\(core.id): sha256 must be 64 lowercase hex chars") }
+            } else if core.url.host() != unpinnedCoreHost {
+                out.append("\(core.id): sha256 may be omitted only for cores on \(unpinnedCoreHost)")
             }
-            if arch == .x86_64 && !rosetta {
-                out.append("\(id): x86_64 requires rosetta: true")
-            }
-            if !isSHA256(sha) {
-                out.append("\(id): sha256 must be 64 lowercase hex chars")
-            }
-            if url.scheme != "https" {
-                out.append("\(id): url must be https")
-            }
-            if let host = url.host(), !allowedHosts.contains(host) {
-                out.append("\(id): host \(host) not in allowlist")
-            }
+            out += transport(core.id, core.url)
+            out += unsafe(core.id, ["file": core.file, "libraryName": core.libraryName])
         }
         return out
+    }
+
+    static func common(_ id: String, _ license: String, _ arch: Arch, _ rosetta: Bool, _ url: URL) -> [String] {
+        var out: [String] = []
+        if !LicensePolicy.runtimeAllowed.contains(license) {
+            out.append("\(id): license \(license) not in runtime allowlist")
+        }
+        if arch == .x86_64 && !rosetta {
+            out.append("\(id): x86_64 requires rosetta: true")
+        }
+        return out
+    }
+
+    /// https and host allowlist.
+    static func transport(_ id: String, _ url: URL) -> [String] {
+        var out: [String] = []
+        if url.scheme != "https" {
+            out.append("\(id): url must be https")
+        }
+        if let host = url.host(), !allowedHosts.contains(host) {
+            out.append("\(id): host \(host) not in allowlist")
+        }
+        return out
+    }
+
+    /// Names joined onto install paths must not escape their directory.
+    static func unsafe(_ id: String, _ fields: KeyValuePairs<String, String>) -> [String] {
+        fields.compactMap { field, value in
+            isSafeComponent(value) ? nil : "\(id): \(field) \(value) is not a single path component"
+        }
+    }
+
+    static func isSafeComponent(_ s: String) -> Bool {
+        !s.isEmpty && !s.hasPrefix(".") && !s.contains("/") && !s.contains(":")
     }
 
     static func isSHA256(_ s: String) -> Bool {
