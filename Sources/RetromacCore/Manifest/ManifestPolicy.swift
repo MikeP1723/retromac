@@ -7,6 +7,8 @@ public enum LicensePolicy {
         "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "LGPL-2.1-or-later", "LGPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later",
         "MPL-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0",
+        // Unversioned "GPL" means any version (GPL §14), so it can be taken as GPLv3.
+        "GPL-1.0-or-later", "LicenseRef-PublicDomain",
     ]
     /// Code vendored into or linked by retromac: must be GPLv3-compatible.
     public static let vendoredAllowed: Set<String> = runtimeAllowed.subtracting(["GPL-2.0-only"])

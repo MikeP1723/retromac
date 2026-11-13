@@ -22,7 +22,7 @@ let monitor720 = DisplayProfile(widthPx: 1280, heightPx: 720, refreshHz: 60, hdr
 @Test func crispHasNoShaderSmoothAlwaysDoes() throws {
     let r = try DisplayRules.bundled()
     #expect(r.shaderPreset(for: tv65_4k, look: .crisp) == nil)
-    #expect(r.shaderPreset(for: monitor720, look: .smooth)?.path == "interpolation/sharp-bilinear-simple.slangp")
+    #expect(r.shaderPreset(for: monitor720, look: .smooth)?.path == "pixel-art-scaling/sharp-bilinear-simple.slangp")
 }
 @Test func everyPresetLicenseIsVendorCompatible() throws {
     let r = try DisplayRules.bundled()

@@ -84,7 +84,10 @@ public struct Installer: Sendable {
             try await withTempDir { tmp in
                 let dmg = try await fetch(app.url, id: app.id, sha256: app.sha256, into: tmp)
                 let mount = tmp.appending(path: "mnt")
-                try runner.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-quiet", "-mountpoint", mount.path, dmg.path])
+                // No -quiet: it silently declines a dmg license agreement (ES-DE ships one).
+                // Choosing to install the app is the acceptance; answer the prompt with Y.
+                try runner.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mount.path, dmg.path],
+                               input: String(repeating: "Y\n", count: 64))
                 defer { _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path]) }
                 let source = mount.appending(path: app.appName)
                 guard fm.fileExists(atPath: source.path) else { throw InstallError.appNotFoundInImage(app.appName) }

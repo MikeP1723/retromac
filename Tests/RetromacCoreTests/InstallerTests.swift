@@ -53,7 +53,7 @@ func coreEntry(_ local: URL, id: String = "mesen", system: SystemID = .nes, file
 
 func appEntry(_ local: URL, version: String = "1.0") throws -> AppEntry {
     AppEntry(id: "fake", version: version, url: host.serve(local, host: "github.com"), sha256: try SHA256File.hex(of: local),
-             license: "MIT", arch: .arm64, rosetta: false, appName: "Fake.app", bundleID: "test.fake")
+             license: "MIT", arch: .arm64, rosetta: false, appName: "Fake.app")
 }
 
 func installer(_ m: Manifest, _ paths: Paths) -> Installer {
@@ -173,4 +173,7 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
     await #expect(throws: URLError.self) {
         try await URLSessionDownloader().download(dir.appending(path: "a"), to: dir.appending(path: "b"))
     }
+}
+@Test func processRunnerFeedsInput() throws {
+    #expect(try ProcessRunner().run("/bin/cat", [], input: "Y\n") == "Y\n")
 }

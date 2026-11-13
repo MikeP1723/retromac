@@ -19,7 +19,6 @@ public struct Paths: Sendable {
     public var retroarchSupport: URL { home.appending(path: "Library/Application Support/RetroArch") }
     public var retroarchConfig: URL { retroarchSupport.appending(path: "config/retroarch.cfg") }
     public var retroarchCores: URL { retroarchSupport.appending(path: "cores") }
-    public var retroarchAutoconfigMFi: URL { retroarchSupport.appending(path: "autoconfig/mfi") }
     public var globalShaderPreset: URL { retroarchSupport.appending(path: "config/global.slangp") }
     public var retroarchShadersSlang: URL { retroarchSupport.appending(path: "shaders/shaders_slang") }
 

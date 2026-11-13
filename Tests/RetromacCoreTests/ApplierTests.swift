@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import RetromacCore
 
-let bundleIDs = ["com.libretro.dist.RetroArch", "org.es-de.frontend"]
+let appNames = ["RetroArch.app", "ES-DE.app"]
 
 func renderInto(_ home: URL) throws -> [RenderedFile] {
     ProfileRenderer.render(profile(library: home.appending(path: "retromac/Library")), manifest: .fixture(),
@@ -13,15 +13,15 @@ func renderInto(_ home: URL) throws -> [RenderedFile] {
 @Test func applyRefusesWhileAppRunning() throws {
     let home = try makeTempDir(), paths = Paths(home: home)
     try write("x", to: paths.retroarchConfig)
-    let applier = Applier(paths: paths, bundleIDs: bundleIDs, isRunning: { $0 == "org.es-de.frontend" })
-    #expect(throws: ApplyError.appRunning("org.es-de.frontend")) { try applier.apply(try renderInto(home)) }
+    let applier = Applier(paths: paths, apps: appNames, isRunning: { $0 == "ES-DE.app" })
+    #expect(throws: ApplyError.appRunning("ES-DE.app")) { try applier.apply(try renderInto(home)) }
     #expect(try read(paths.retroarchConfig) == "x")
     #expect(!FileManager.default.fileExists(atPath: paths.backups.path))
 }
 @Test func applyBacksUpThenWrites() throws {
     let home = try makeTempDir(), paths = Paths(home: home)
     try write("menu_driver = \"ozone\"\n", to: paths.retroarchConfig)
-    let report = try Applier(paths: paths, bundleIDs: bundleIDs, isRunning: { _ in false }).apply(try renderInto(home))
+    let report = try Applier(paths: paths, apps: appNames, isRunning: { _ in false }).apply(try renderInto(home))
     let cfg = try read(paths.retroarchConfig)
     #expect(cfg.hasPrefix("menu_driver = \"ozone\"\n"))
     #expect(cfg.contains("video_fullscreen = \"true\""))
@@ -32,7 +32,7 @@ func renderInto(_ home: URL) throws -> [RenderedFile] {
 }
 @Test func reapplyIsNoOp() throws {
     let home = try makeTempDir(), paths = Paths(home: home)
-    let applier = Applier(paths: paths, bundleIDs: bundleIDs, isRunning: { _ in false })
+    let applier = Applier(paths: paths, apps: appNames, isRunning: { _ in false })
     let files = try renderInto(home)
     _ = try applier.apply(files)
     let second = try applier.apply(files)

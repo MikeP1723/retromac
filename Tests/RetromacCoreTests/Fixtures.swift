@@ -15,10 +15,10 @@ extension Manifest {
             apps: [
                 AppEntry(id: "retroarch", version: "1.0", url: URL(string: "https://buildbot.libretro.com/fixture/RetroArch.dmg")!,
                          sha256: sha, license: "GPL-3.0-or-later", arch: .universal, rosetta: false,
-                         appName: "RetroArch.app", bundleID: "com.libretro.dist.RetroArch"),
+                         appName: "RetroArch.app"),
                 AppEntry(id: "esde", version: "1.0", url: URL(string: "https://gitlab.com/fixture/ES-DE.dmg")!,
                          sha256: sha, license: "MIT", arch: .arm64, rosetta: false,
-                         appName: "ES-DE.app", bundleID: "org.es-de.frontend"),
+                         appName: "ES-DE.app"),
             ],
             cores: [
                 core("mesen", .nes, "Mesen"),

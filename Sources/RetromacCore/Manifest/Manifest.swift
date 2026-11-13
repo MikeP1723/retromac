@@ -15,13 +15,12 @@ public struct AppEntry: Codable, Equatable, Sendable {
     public var arch: Arch
     public var rosetta: Bool
     public var appName: String
-    public var bundleID: String
 
     public init(id: String, version: String, url: URL, sha256: String, license: String,
-                arch: Arch, rosetta: Bool, appName: String, bundleID: String) {
+                arch: Arch, rosetta: Bool, appName: String) {
         self.id = id; self.version = version; self.url = url; self.sha256 = sha256
         self.license = license; self.arch = arch; self.rosetta = rosetta
-        self.appName = appName; self.bundleID = bundleID
+        self.appName = appName
     }
 }
 

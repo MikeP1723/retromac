@@ -261,3 +261,11 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
 
 1. **Switch is detect-and-configure only.** retromac never downloads a Switch emulator and never handles keys or firmware.
 2. **PS2 uses official PCSX2 under Rosetta** until an official arm64 build ships. ARMSX2 stays a possible one-line manifest swap later.
+3. **Cores trust the libretro host** (decided during Phase 1, 2026-11-13). libretro publishes macOS cores only at a mutable `nightly/…/latest/` URL. Apps stay sha-pinned. Cores may omit `sha256` only when hosted on `buildbot.libretro.com`, and the actual sha is recorded in `state.json` on install.
+
+## Findings from Phase 1 verification
+
+- **RetroArch registers every mfi pad as "mFi Controller".** Per-device autoconfig therefore can't work. Face-button policy and hotkeys are written as `retroarch.cfg` player binds instead. The "label" policy applies only when every detected pad is Xbox-style.
+- **ES-DE 3.5.0's `CFBundleIdentifier` is its version string.** Running-app checks match by app bundle name instead.
+- **ES-DE's dmg carries a license agreement.** The installer answers it, since `hdiutil -quiet` silently declines it.
+- **Shaders ship inside RetroArch's `assets.zip` and are extracted on first launch.** A game launched as RetroArch's very first run may start without its shader.

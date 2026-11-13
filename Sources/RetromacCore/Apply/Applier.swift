@@ -14,17 +14,18 @@ public enum ApplyError: Error, Equatable {
 
 public struct Applier {
     let paths: Paths
-    let bundleIDs: [String]
+    /// App bundle names (e.g. "ES-DE.app"); bundle IDs aren't reliable (ES-DE's is its version).
+    let apps: [String]
     let isRunning: (String) -> Bool
 
-    public init(paths: Paths, bundleIDs: [String], isRunning: @escaping (String) -> Bool) {
+    public init(paths: Paths, apps: [String], isRunning: @escaping (String) -> Bool) {
         self.paths = paths
-        self.bundleIDs = bundleIDs
+        self.apps = apps
         self.isRunning = isRunning
     }
 
     public func apply(_ files: [RenderedFile]) throws -> ApplyReport {
-        if let running = bundleIDs.first(where: isRunning) {
+        if let running = apps.first(where: isRunning) {
             throw ApplyError.appRunning(running)
         }
         let fm = FileManager.default

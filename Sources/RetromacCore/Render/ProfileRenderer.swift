@@ -28,7 +28,7 @@ public enum ProfileRenderer {
         let preset = rules.shaderPreset(for: p.display, look: p.look)
         var files: [RenderedFile] = []
 
-        files.append(RenderedFile(url: paths.retroarchConfig, kind: .retroarchKeys([
+        var keys = [
             "video_fullscreen": "true",
             "video_refresh_rate": String(format: "%.6f", p.display.refreshHz),
             "vrr_runloop_enable": String(p.display.vrr),
@@ -36,9 +36,12 @@ public enum ProfileRenderer {
             "video_scale_integer": String(p.look != .smooth),
             "video_aspect_ratio_auto": "true",
             "video_shader_enable": String(preset != nil),
+            "auto_shaders_enable": "true",
             "input_joypad_driver": "mfi",
             "input_autodetect_enable": "true",
-        ])))
+        ]
+        keys.merge(ControllerBinds.keys(for: p.controllers, policy: p.facePolicy)) { $1 }
+        files.append(RenderedFile(url: paths.retroarchConfig, kind: .retroarchKeys(keys)))
 
         if let preset {
             let target = paths.retroarchShadersSlang.appending(path: preset.path).path
@@ -49,12 +52,6 @@ public enum ProfileRenderer {
             guard let core = manifest.core(for: system) else { continue }
             let body = "run_ahead_enabled = \"true\"\nrun_ahead_frames = \"1\"\nrun_ahead_secondary_instance = \"true\"\n"
             files.append(RenderedFile(url: paths.coreOverride(libraryName: core.libraryName), kind: .whole(header + body)))
-        }
-
-        for controller in p.controllers {
-            files.append(RenderedFile(
-                url: paths.retroarchAutoconfigMFi.appending(path: AutoconfigRenderer.fileName(for: controller)),
-                kind: .whole(AutoconfigRenderer.render(controller, policy: p.facePolicy))))
         }
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))

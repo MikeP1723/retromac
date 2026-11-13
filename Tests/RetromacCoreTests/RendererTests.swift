@@ -47,11 +47,14 @@ func wholeContent(_ files: [RenderedFile], _ url: URL) -> String? {
     }
     #expect(wholeContent(files, paths.coreOverride(libraryName: "Mupen64Plus-Next")) == nil)
 }
-@Test func noControllersMeansNoAutoconfig() throws {
-    let paths = Paths(home: URL(filePath: "/tmp/h"))
-    let files = try render(profile(controllers: []))
-    #expect(!files.contains { $0.url.path.hasPrefix(paths.retroarchAutoconfigMFi.path) })
-    #expect(files.contains { $0.url == paths.retroarchConfig })
+@Test func controllerBindsAndShaderAutoloadAreOwnedKeys() throws {
+    let keys = retroarchKeys(try render(profile(controllers: [])))
+    #expect(keys["input_player1_a_btn"] == "8")
+    #expect(keys["input_exit_emulator_btn"] == "3")
+    #expect(keys["auto_shaders_enable"] == "true")
+}
+@Test func rendersNoAutoconfigFiles() throws {
+    #expect(!(try render(profile())).contains { $0.url.path.contains("/autoconfig/") })
 }
 @Test func shaderReferenceQuotesPathWithSpaces() throws {
     let paths = Paths(home: URL(filePath: "/tmp/my home"))
