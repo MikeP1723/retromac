@@ -14,7 +14,9 @@ func render(_ p: Profile, home: String = "/tmp/h") throws -> [RenderedFile] {
 }
 
 func retroarchKeys(_ files: [RenderedFile]) -> [String: String] {
-    for f in files { if case .retroarchKeys(let keys) = f.kind { return keys } }
+    for f in files where f.url.lastPathComponent == "retroarch.cfg" {
+        if case .retroarchKeys(let keys) = f.kind { return keys }
+    }
     return [:]
 }
 
@@ -42,10 +44,14 @@ func wholeContent(_ files: [RenderedFile], _ url: URL) -> String? {
 @Test func runAheadOnlyForCheapCores() throws {
     let paths = Paths(home: URL(filePath: "/tmp/h"))
     let files = try render(profile())
-    for lib in ["Mesen", "bsnes", "BlastEm"] {
-        #expect(wholeContent(files, paths.coreOverride(libraryName: lib))?.contains("run_ahead_enabled = \"true\"") == true)
+    func keys(_ lib: String) -> [String: String]? {
+        for f in files where f.url == paths.coreOverride(libraryName: lib) {
+            if case .retroarchKeys(let k) = f.kind { return k }
+        }
+        return nil
     }
-    #expect(wholeContent(files, paths.coreOverride(libraryName: "Mupen64Plus-Next")) == nil)
+    for lib in ["Mesen", "bsnes", "BlastEm"] { #expect(keys(lib)?["run_ahead_enabled"] == "true") }
+    #expect(keys("Mupen64Plus-Next") == nil)
 }
 @Test func controllerBindsAndShaderAutoloadAreOwnedKeys() throws {
     let keys = retroarchKeys(try render(profile(controllers: [])))
@@ -64,7 +70,10 @@ func wholeContent(_ files: [RenderedFile], _ url: URL) -> String? {
 }
 @Test func esdeSystemsOnlySelected() throws {
     let paths = Paths(home: URL(filePath: "/tmp/h"))
-    let xml = try #require(wholeContent(try render(profile(systems: [.nes, .n64])), paths.esdeCustomSystems))
+    var xml = ""
+    for f in try render(profile(systems: [.nes, .n64])) where f.url == paths.esdeCustomSystems {
+        if case .esdeSystems(let s) = f.kind { xml = s }
+    }
     #expect(xml.contains("<name>nes</name>")); #expect(xml.contains("<name>n64</name>"))
     #expect(!xml.contains("<name>snes</name>"))
     #expect(xml.contains("%CORE_RETROARCH%/mesen_libretro.dylib %ROM%"))

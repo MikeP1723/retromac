@@ -7,6 +7,8 @@ public struct RenderedFile: Equatable, Sendable {
         case retroarchKeys([String: String])
         /// ROMDirectory merged into es_settings.xml.
         case esdeSettings(romDirectory: String)
+        /// ES-DE custom systems: these <system> entries replace same-named ones; others are kept.
+        case esdeSystems(String)
         /// A file retromac owns entirely.
         case whole(String)
         case directory
@@ -50,12 +52,15 @@ public enum ProfileRenderer {
 
         for system in p.systems.intersection(rules.runAheadSystems) {
             guard let core = manifest.core(for: system) else { continue }
-            let body = "run_ahead_enabled = \"true\"\nrun_ahead_frames = \"1\"\nrun_ahead_secondary_instance = \"true\"\n"
-            files.append(RenderedFile(url: paths.coreOverride(libraryName: core.libraryName), kind: .whole(header + body)))
+            files.append(RenderedFile(url: paths.coreOverride(libraryName: core.libraryName), kind: .retroarchKeys([
+                "run_ahead_enabled": "true",
+                "run_ahead_frames": "1",
+                "run_ahead_secondary_instance": "true",
+            ])))
         }
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
-        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .whole(ESDESystems.xml(for: p.systems, manifest: manifest))))
+        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: p.systems, manifest: manifest))))
 
         for system in p.systems {
             files.append(RenderedFile(url: p.libraryRoot.appending(path: system.rawValue), kind: .directory))

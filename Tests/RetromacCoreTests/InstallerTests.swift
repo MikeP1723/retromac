@@ -177,3 +177,44 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
 @Test func processRunnerFeedsInput() throws {
     #expect(try ProcessRunner().run("/bin/cat", [], input: "Y\n") == "Y\n")
 }
+@Test func processRunnerDoesNotDeadlockOnLargeStderr() throws {
+    let done = DispatchSemaphore(value: 0)
+    Thread.detachNewThread {
+        _ = try? ProcessRunner().run("/bin/sh", ["-c", "head -c 200000 /dev/zero | tr '\\\\0' x >&2; echo out"])
+        done.signal()
+    }
+    #expect(done.wait(timeout: .now() + 10) == .success)
+}
+/// Runs real commands, but simulates ditto dying halfway: partial output, then failure.
+struct DittoDiesRunner: CommandRunner {
+    func run(_ executable: String, _ args: [String], input: String?) throws -> String {
+        if executable == "/usr/bin/ditto", let dest = args.last {
+            try FileManager.default.createDirectory(atPath: dest + "/Contents", withIntermediateDirectories: true)
+            throw InstallError.commandFailed(executable, 1, "No space left on device")
+        }
+        return try ProcessRunner().run(executable, args, input: input)
+    }
+}
+@Test func interruptedAppCopyLeavesNoPartialApp() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    let entry = try appEntry(makeAppDmg(in: dir))
+    let failing = Installer(manifest: manifest(apps: [entry]), paths: paths, downloader: host, runner: DittoDiesRunner())
+    await #expect(throws: InstallError.self) { try await failing.install(systems: []) }
+    #expect(!FileManager.default.fileExists(atPath: apps.appending(path: "Fake.app").path))
+    #expect(try await installer(manifest(apps: [entry]), paths).install(systems: []).installed == ["fake"])
+    #expect(try FileManager.default.contentsOfDirectory(atPath: apps.path) == ["Fake.app"])
+}
+@Test func extractsRetroArchAssetsBeforeFirstLaunch() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    let staging = dir.appending(path: "assets")
+    try write("preset", to: staging.appending(path: "shaders/shaders_slang/crt/crt-easymode.slangp"))
+    try write("mfi", to: staging.appending(path: "autoconfig/mfi/MFi_Controller.cfg"))
+    let resources = apps.appending(path: "RetroArch.app/Contents/Resources")
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", resources.appending(path: "assets.zip").path, "-C", staging.path, "shaders", "autoconfig"])
+    _ = try await installer(manifest(), paths).install(systems: [])
+    #expect(try read(paths.retroarchShadersSlang.appending(path: "crt/crt-easymode.slangp")) == "preset")
+    #expect(try read(paths.retroarchSupport.appending(path: "autoconfig/mfi/MFi_Controller.cfg")) == "mfi")
+}

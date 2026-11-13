@@ -67,6 +67,7 @@ public struct Installer: Sendable {
         var state = try InstallState.load(from: paths.state)
         var report = InstallReport()
         let fm = FileManager.default
+        removeStaleStaging()
 
         for app in manifest.apps {
             let target = paths.applications.appending(path: app.appName)
@@ -91,13 +92,20 @@ public struct Installer: Sendable {
                 defer { _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path]) }
                 let source = mount.appending(path: app.appName)
                 guard fm.fileExists(atPath: source.path) else { throw InstallError.appNotFoundInImage(app.appName) }
-                try fm.createDirectory(at: paths.applications, withIntermediateDirectories: true)
-                try runner.run("/usr/bin/ditto", [source.path, target.path])
+                // Copy beside the target, then rename: an interrupted copy must never leave a
+                // partial app at the target, which later runs would treat as user-installed.
+                let staging = paths.applications.appending(path: ".retromac-staging-\(UUID().uuidString)")
+                try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+                defer { try? fm.removeItem(at: staging) }
+                try runner.run("/usr/bin/ditto", [source.path, staging.appending(path: app.appName).path])
+                try fm.moveItem(at: staging.appending(path: app.appName), to: target)
             }
             state.apps[app.id] = .init(version: app.version, sha256: app.sha256, managed: true)
             try state.save(to: paths.state)
             report.installed.append(app.id)
         }
+
+        try extractRetroArchAssets()
 
         for core in manifest.cores where systems.contains(core.system) {
             let target = paths.retroarchCores.appending(path: core.file)
@@ -148,6 +156,25 @@ public struct Installer: Sendable {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         try await body(dir)
+    }
+
+    /// RetroArch unpacks assets.zip (shaders, controller autoconfig) only on its own first launch,
+    /// which is usually the user's first game; unpack it now so that game has both.
+    func extractRetroArchAssets() throws {
+        let fm = FileManager.default
+        let zip = paths.applications.appending(path: "RetroArch.app/Contents/Resources/assets.zip")
+        guard fm.fileExists(atPath: zip.path), !fm.fileExists(atPath: paths.retroarchShadersSlang.path) else { return }
+        try fm.createDirectory(at: paths.retroarchSupport, withIntermediateDirectories: true)
+        try runner.run("/usr/bin/ditto", ["-x", "-k", zip.path, paths.retroarchSupport.path])
+    }
+
+    /// Leftovers from a run that was killed mid-copy.
+    func removeStaleStaging() {
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(atPath: paths.applications.path)) ?? []
+        for name in entries where name.hasPrefix(".retromac-staging-") {
+            try? fm.removeItem(at: paths.applications.appending(path: name))
+        }
     }
 
     static func bundleVersion(of app: URL) -> String? {

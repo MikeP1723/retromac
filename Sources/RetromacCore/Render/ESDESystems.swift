@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import Foundation
 
 /// ES-DE custom_systems/es_systems.xml: overrides the bundled entries so each system
 /// launches the retromac-chosen core.
@@ -16,7 +17,7 @@ public enum ESDESystems {
     ]
 
     public static func xml(for systems: Set<SystemID>, manifest: Manifest) -> String {
-        var out = "<?xml version=\"1.0\"?>\n<!-- Managed by retromac — edits will be overwritten -->\n<systemList>\n"
+        var out = "<?xml version=\"1.0\"?>\n<systemList>\n"
         for system in SystemID.allCases where systems.contains(system) {
             guard let core = manifest.core(for: system), let info = info[system] else { continue }
             let exts = info.extensions.flatMap { [".\($0)", ".\($0.uppercased())"] }.joined(separator: " ")
@@ -35,5 +36,26 @@ public enum ESDESystems {
             """
         }
         return out + "</systemList>\n"
+    }
+
+    /// Replaces the user's same-named <system> entries with ours and keeps all others.
+    public static func merge(existing: String?, ours: String) throws -> String {
+        let doc = try XMLDocument(xmlString: existing ?? ours)
+        let oursDoc = try XMLDocument(xmlString: ours)
+        guard let root = doc.rootElement(), let oursRoot = oursDoc.rootElement() else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let systems = oursRoot.elements(forName: "system")
+        let names = Set(systems.compactMap { $0.elements(forName: "name").first?.stringValue })
+        for system in root.elements(forName: "system") {
+            if let name = system.elements(forName: "name").first?.stringValue, names.contains(name) {
+                system.detach()
+            }
+        }
+        for system in systems {
+            system.detach()
+            root.addChild(system)
+        }
+        return doc.xmlString(options: [.nodePrettyPrint]) + "\n"
     }
 }

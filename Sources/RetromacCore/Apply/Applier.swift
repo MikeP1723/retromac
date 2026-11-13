@@ -38,18 +38,22 @@ public struct Applier {
                 fm.fileExists(atPath: file.url.path) ? unchanged.append(file.url) : newDirs.append(file.url)
                 continue
             }
-            let current = try? String(contentsOf: file.url, encoding: .utf8)
+            // Only a missing file counts as empty; anything unreadable must stop the apply,
+            // or merging into "" would discard the user's settings.
+            let current = fm.fileExists(atPath: file.url.path) ? try String(contentsOf: file.url, encoding: .utf8) : nil
             let final: String
             switch file.kind {
             case .retroarchKeys(let keys): final = RetroArchConfig.merge(existing: current ?? "", owned: keys)
             case .esdeSettings(let dir): final = ESDESettings.merge(existing: current, romDirectory: dir)
+            case .esdeSystems(let ours): final = try ESDESystems.merge(existing: current, ours: ours)
             case .whole(let text): final = text
             case .directory: continue
             }
             final == current ? unchanged.append(file.url) : changed.append((file.url, final))
         }
 
-        let backup = try BackupStore(root: paths.backups, home: paths.home).snapshot(changed.map(\.0))
+        let created = changed.map(\.0).filter { !fm.fileExists(atPath: $0.path) }
+        let backup = try BackupStore(root: paths.backups, home: paths.home).snapshot(changed.map(\.0), created: created)
         for (url, content) in changed {
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try content.write(to: url, atomically: true, encoding: .utf8)

@@ -13,11 +13,15 @@ public struct BackupStore {
         self.now = now
     }
 
-    /// Copies each existing file into a new snapshot; nil when none of them exist.
-    public func snapshot(_ files: [URL]) throws -> URL? {
+    /// Lists home-relative paths that didn't exist before the change; restore deletes them.
+    static let createdList = ".retromac-created"
+
+    /// Copies each existing file into a new snapshot and records `created` files for removal on
+    /// restore; nil when there is nothing to record.
+    public func snapshot(_ files: [URL], created: [URL] = []) throws -> URL? {
         let fm = FileManager.default
         let existing = files.filter { fm.fileExists(atPath: $0.path) }
-        guard !existing.isEmpty else { return nil }
+        guard !existing.isEmpty || !created.isEmpty else { return nil }
 
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -29,6 +33,11 @@ public struct BackupStore {
             if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
             try fm.copyItem(at: file, to: dest)
         }
+        try fm.createDirectory(at: snapshot, withIntermediateDirectories: true)
+        if !created.isEmpty {
+            let list = created.map { relativePath(of: $0) + "\n" }.joined()
+            try list.write(to: snapshot.appending(path: Self.createdList), atomically: true, encoding: .utf8)
+        }
         return snapshot
     }
 
@@ -39,10 +48,15 @@ public struct BackupStore {
         for case let file as URL in walker {
             guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
             let relative = String(file.standardizedFileURL.path.dropFirst(base.count))
+            if relative == Self.createdList { continue }
             let dest = home.appending(path: relative)
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
             if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
             try fm.copyItem(at: file, to: dest)
+        }
+        let created = (try? String(contentsOf: snapshot.appending(path: Self.createdList), encoding: .utf8)) ?? ""
+        for relative in created.split(separator: "\n") {
+            try? fm.removeItem(at: home.appending(path: String(relative)))
         }
     }
 
