@@ -7,7 +7,58 @@ let usage = """
     usage: retromac-tool verify-manifest
            retromac-tool install --systems nes,snes,genesis,n64 [--home DIR] [--applications DIR]
            retromac-tool apply --profile FILE [--home DIR]
+           retromac-tool check-upstream [--write] [--manifest FILE]
+           retromac-tool release-manifest --version X --zip-url URL --sha SHA
     """
+
+let defaultManifestPath = "Sources/RetromacCore/Resources/manifest.json"
+
+func encode(_ manifest: Manifest) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    return try encoder.encode(manifest) + Data("\n".utf8)
+}
+
+/// Compares each app's upstream source against the manifest; with --write, pins newer builds.
+func checkUpstream(_ args: [String]) async throws {
+    let file = URL(filePath: option("--manifest", in: args) ?? defaultManifestPath)
+    var manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: file))
+    let downloader = URLSessionDownloader()
+    let tmp = FileManager.default.temporaryDirectory.appending(path: "retromac-upstream-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    var failed = false, changed = false
+    for i in manifest.apps.indices {
+        let app = manifest.apps[i]
+        guard let upstream = app.upstream else { continue }
+        do {
+            let body = tmp.appending(path: "\(app.id).body")
+            try await downloader.download(UpstreamResolver.endpoint(upstream), to: body)
+            guard let candidate = UpstreamResolver.resolve(upstream, body: try Data(contentsOf: body)) else {
+                print("FAIL \(app.id) no matching release asset"); failed = true; continue
+            }
+            guard candidate.version != app.version else { print("same \(app.id) \(app.version)"); continue }
+            let asset = tmp.appending(path: "\(app.id).asset")
+            try await downloader.download(candidate.url, to: asset)
+            manifest.apps[i].version = candidate.version
+            manifest.apps[i].url = candidate.url
+            manifest.apps[i].sha256 = try SHA256File.hex(of: asset)
+            changed = true
+            print("bump \(app.id) \(app.version) -> \(candidate.version)")
+        } catch {
+            print("FAIL \(app.id) \(error)"); failed = true
+        }
+    }
+    if changed && args.contains("--write") {
+        manifest.manifestVersion += 1
+        let violations = ManifestPolicy.violations(manifest)
+        violations.forEach { print("POLICY \($0)") }
+        if !violations.isEmpty { exit(1) }
+        try encode(manifest).write(to: file)
+    }
+    if failed { exit(1) }
+}
 
 func option(_ name: String, in args: [String]) -> String? {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -82,6 +133,17 @@ do {
         print("installed: \(report.installed.joined(separator: ", "))")
         print("skipped: \(report.skipped.joined(separator: ", "))")
         report.warnings.forEach { print("warning: \($0)") }
+    case "check-upstream":
+        try await checkUpstream(args)
+    case "release-manifest":
+        guard let version = option("--version", in: args), let zip = option("--zip-url", in: args).flatMap(URL.init(string:)),
+              let sha = option("--sha", in: args) else { fail(usage) }
+        var manifest = try JSONDecoder().decode(Manifest.self,
+                                                from: Data(contentsOf: URL(filePath: option("--manifest", in: args) ?? defaultManifestPath)))
+        manifest.retromac = SelfEntry(version: version, url: zip, sha256: sha)
+        let violations = ManifestPolicy.violations(manifest)
+        guard violations.isEmpty else { fail(violations.joined(separator: "\n")) }
+        FileHandle.standardOutput.write(try encode(manifest))
     case "apply":
         guard let file = option("--profile", in: args) else { fail(usage) }
         let manifest = try Manifest.bundled()
