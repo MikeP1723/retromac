@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Foundation
+
+public struct ApplyReport: Equatable, Sendable {
+    public var written: [URL]
+    public var unchanged: [URL]
+    public var backup: URL?
+}
+
+public enum ApplyError: Error, Equatable {
+    /// RetroArch and ES-DE rewrite their config on exit and would undo the apply.
+    case appRunning(String)
+}
+
+public struct Applier {
+    let paths: Paths
+    let bundleIDs: [String]
+    let isRunning: (String) -> Bool
+
+    public init(paths: Paths, bundleIDs: [String], isRunning: @escaping (String) -> Bool) {
+        self.paths = paths
+        self.bundleIDs = bundleIDs
+        self.isRunning = isRunning
+    }
+
+    public func apply(_ files: [RenderedFile]) throws -> ApplyReport {
+        if let running = bundleIDs.first(where: isRunning) {
+            throw ApplyError.appRunning(running)
+        }
+        let fm = FileManager.default
+        var changed: [(URL, String)] = []
+        var newDirs: [URL] = []
+        var unchanged: [URL] = []
+
+        for file in files {
+            if file.kind == .directory {
+                fm.fileExists(atPath: file.url.path) ? unchanged.append(file.url) : newDirs.append(file.url)
+                continue
+            }
+            let current = try? String(contentsOf: file.url, encoding: .utf8)
+            let final: String
+            switch file.kind {
+            case .retroarchKeys(let keys): final = RetroArchConfig.merge(existing: current ?? "", owned: keys)
+            case .esdeSettings(let dir): final = ESDESettings.merge(existing: current, romDirectory: dir)
+            case .whole(let text): final = text
+            case .directory: continue
+            }
+            final == current ? unchanged.append(file.url) : changed.append((file.url, final))
+        }
+
+        let backup = try BackupStore(root: paths.backups, home: paths.home).snapshot(changed.map(\.0))
+        for (url, content) in changed {
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        }
+        for dir in newDirs {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return ApplyReport(written: changed.map(\.0) + newDirs, unchanged: unchanged, backup: backup)
+    }
+}
