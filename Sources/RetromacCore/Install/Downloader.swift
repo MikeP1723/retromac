@@ -6,11 +6,17 @@ public protocol Downloader: Sendable {
 }
 
 public struct URLSessionDownloader: Downloader {
-    public init() {}
+    let headers: [String: String]
+
+    public init(headers: [String: String] = [:]) {
+        self.headers = headers
+    }
 
     public func download(_ url: URL, to dest: URL) async throws {
         guard url.scheme == "https" else { throw URLError(.unsupportedURL, userInfo: [NSURLErrorFailingURLErrorKey: url]) }
-        let (tmp, response) = try await URLSession.shared.download(from: url)
+        var request = URLRequest(url: url)
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+        let (tmp, response) = try await URLSession.shared.download(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse, userInfo: [NSURLErrorFailingURLErrorKey: url])
         }

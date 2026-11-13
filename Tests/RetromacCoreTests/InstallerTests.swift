@@ -14,6 +14,10 @@ final class FixtureDownloader: Downloader, @unchecked Sendable {
         return url
     }
 
+    func serve(_ local: URL, at url: URL) {
+        lock.withLock { files[url] = local }
+    }
+
     func download(_ url: URL, to dest: URL) async throws {
         guard let local = lock.withLock({ files[url] }) else { throw URLError(.fileDoesNotExist) }
         try FileManager.default.copyItem(at: local, to: dest)
