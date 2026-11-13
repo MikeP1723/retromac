@@ -1,0 +1,8 @@
+{
+  "crtTiers": [
+    { "minHeightPx": 2160, "maxPPD": 100, "preset": { "path": "crt/crt-guest-advanced.slangp", "license": "GPL-2.0-or-later" } },
+    { "minHeightPx": 1080, "maxPPD": null, "preset": { "path": "crt/crt-easymode.slangp", "license": "GPL-2.0-or-later" } }
+  ],
+  "smoothPreset": { "path": "interpolation/sharp-bilinear-simple.slangp", "license": "GPL-2.0-or-later" },
+  "runAheadSystems": ["nes", "snes", "genesis"]
+}
