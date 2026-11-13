@@ -29,11 +29,17 @@ func makeCoreZip(in dir: URL, name: String = "fake_libretro.dylib", bytes: Strin
     return zip
 }
 
+/// Concurrent `hdiutil create -srcfolder` runs intermittently leave images attached,
+/// so fixture creation is serialized.
+let dmgCreateLock = NSLock()
+
 func makeAppDmg(in dir: URL, appName: String = "Fake.app", version: String = "1.0") throws -> URL {
     let src = dir.appending(path: "dmgsrc-\(UUID().uuidString)")
     try writePlist(version: version, to: src.appending(path: appName))
     let dmg = dir.appending(path: "app-\(UUID().uuidString).dmg")
-    try ProcessRunner().run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-format", "UDZO", "-volname", "Fake", dmg.path])
+    try dmgCreateLock.withLock {
+        _ = try ProcessRunner().run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-format", "UDZO", "-volname", "Fake", dmg.path])
+    }
     return dmg
 }
 
