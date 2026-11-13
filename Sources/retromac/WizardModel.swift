@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import Foundation
+import AppKit
 import GameController
 import Observation
 import RetromacCore
@@ -24,6 +24,8 @@ final class WizardModel {
     var profile: Profile
     var log: [String] = []
     var busy = false
+    /// Set after a successful Install & Apply; the last step then offers to open ES-DE.
+    var applied = false
     var backups: [URL] = []
     var loadError: String?
 
@@ -77,6 +79,7 @@ final class WizardModel {
         busy = true
         defer { busy = false }
         log = []
+        applied = false
         do {
             try profile.save(to: paths.profile)
             log.append("Installing emulators and cores…")
@@ -87,16 +90,21 @@ final class WizardModel {
             installed.warnings.forEach { log.append("Note: \($0)") }
 
             let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
-            let applied = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
-            log.append("Wrote \(applied.written.count) files, \(applied.unchanged.count) unchanged.")
-            if let backup = applied.backup { log.append("Previous config backed up to \(backup.path)") }
+            let report = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
+            log.append("Wrote \(report.written.count) files, \(report.unchanged.count) unchanged.")
+            if let backup = report.backup { log.append("Previous config backed up to \(backup.path)") }
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
             log.append("Done.")
+            applied = true
         } catch ApplyError.appRunning(let app) {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
             log.append("Error: \(error)")
         }
+    }
+
+    func openESDE() {
+        NSWorkspace.shared.open(paths.applications.appending(path: "ES-DE.app"))
     }
 
     func restore(_ snapshot: URL) {

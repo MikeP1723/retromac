@@ -59,6 +59,12 @@ struct WizardView: View {
                 if model.step != .apply {
                     Button("Next") { model.step = WizardModel.Step(rawValue: model.step.rawValue + 1) ?? .apply }
                         .keyboardShortcut(.defaultAction)
+                } else {
+                    if model.applied {
+                        Button("Open ES-DE") { model.openESDE() }
+                    }
+                    Button("Done") { NSApplication.shared.terminate(nil) }
+                        .disabled(model.busy)
                 }
             }
             .padding()
