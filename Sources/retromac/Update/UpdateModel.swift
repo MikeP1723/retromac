@@ -29,7 +29,7 @@ final class UpdateModel {
     }
 
     var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        AppVersion.current(infoDictionary: Bundle.main.infoDictionary)
     }
 
     var hasUpdates: Bool {
