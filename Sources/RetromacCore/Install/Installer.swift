@@ -87,24 +87,9 @@ public struct Installer: Sendable {
                 }
                 continue
             }
-            try await withTempDir { tmp in
-                let dmg = try await fetch(app.url, id: app.id, sha256: app.sha256, into: tmp)
-                let mount = tmp.appending(path: "mnt")
-                // No -quiet: it silently declines a dmg license agreement (ES-DE ships one).
-                // Choosing to install the app is the acceptance; answer the prompt with Y.
-                try runner.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mount.path, dmg.path],
-                               input: String(repeating: "Y\n", count: 64))
-                defer { _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path]) }
-                let source = mount.appending(path: app.appName)
-                guard fm.fileExists(atPath: source.path) else { throw InstallError.appNotFoundInImage(app.appName) }
-                // Copy beside the target, then rename: an interrupted copy must never leave a
-                // partial app at the target, which later runs would treat as user-installed.
-                let staging = paths.applications.appending(path: ".retromac-staging-\(UUID().uuidString)")
-                try fm.createDirectory(at: staging, withIntermediateDirectories: true)
-                defer { try? fm.removeItem(at: staging) }
-                try runner.run("/usr/bin/ditto", [source.path, staging.appending(path: app.appName).path])
-                try fm.moveItem(at: staging.appending(path: app.appName), to: target)
-            }
+            let staged = try await stageApp(app)
+            defer { try? fm.removeItem(at: staged.deletingLastPathComponent()) }
+            try fm.moveItem(at: staged, to: target)
             state.apps[app.id] = .init(version: app.version, sha256: app.sha256, managed: true)
             try state.save(to: paths.state)
             report.installed.append(app.id)
@@ -119,22 +104,16 @@ public struct Installer: Sendable {
                 report.skipped.append(core.id)
                 continue
             }
-            var actual = "", crc = ""
+            var staged: (dylib: URL, sha256: String, crc32: String)?
             try await withTempDir { tmp in
-                let archive = try await fetch(core.url, id: core.id, sha256: core.sha256, into: tmp)
-                actual = try SHA256File.hex(of: archive)
-                let extracted = tmp.appending(path: "x")
-                try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
-                try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", extracted.path])
-                guard let found = Self.find(core.file, under: extracted) else {
-                    throw InstallError.fileNotFoundInArchive(core.file)
-                }
-                crc = try CRC32.hex(of: found)
+                let result = try await stageCore(core, in: tmp)
                 try fm.createDirectory(at: paths.retroarchCores, withIntermediateDirectories: true)
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
-                try fm.moveItem(at: found, to: target)
+                try fm.moveItem(at: result.dylib, to: target)
+                staged = result
             }
-            state.cores[core.id] = .init(version: core.version, sha256: actual, file: core.file, crc32: crc)
+            guard let staged else { continue }
+            state.cores[core.id] = .init(version: core.version, sha256: staged.sha256, file: core.file, crc32: staged.crc32)
             try state.save(to: paths.state)
             report.installed.append(core.id)
         }
@@ -142,6 +121,46 @@ public struct Installer: Sendable {
         state.manifestVersion = manifest.manifestVersion
         try state.save(to: paths.state)
         return report
+    }
+
+    /// Downloads, verifies and copies the app into a staging dir beside its target, so moving it
+    /// into place is a same-volume rename. The caller removes the staging dir after the move.
+    public func stageApp(_ app: AppEntry) async throws -> URL {
+        let fm = FileManager.default
+        let staging = paths.applications.appending(path: ".retromac-staging-\(UUID().uuidString)")
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        do {
+            try await withTempDir { tmp in
+                let dmg = try await fetch(app.url, id: app.id, sha256: app.sha256, into: tmp)
+                let mount = tmp.appending(path: "mnt")
+                // No -quiet: it silently declines a dmg license agreement (ES-DE ships one).
+                // Choosing to install the app is the acceptance; answer the prompt with Y.
+                try runner.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mount.path, dmg.path],
+                               input: String(repeating: "Y\n", count: 64))
+                defer { _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path]) }
+                let source = mount.appending(path: app.appName)
+                guard fm.fileExists(atPath: source.path) else { throw InstallError.appNotFoundInImage(app.appName) }
+                try runner.run("/usr/bin/ditto", [source.path, staging.appending(path: app.appName).path])
+            }
+            return staging.appending(path: app.appName)
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    /// Downloads (verifying the sha when pinned) and extracts a core under `dir`.
+    public func stageCore(_ core: CoreEntry, in dir: URL) async throws -> (dylib: URL, sha256: String, crc32: String) {
+        let work = dir.appending(path: core.id)
+        let extracted = work.appending(path: "x")
+        try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+        let archive = try await fetch(core.url, id: core.id, sha256: core.sha256, into: work)
+        let sha = try SHA256File.hex(of: archive)
+        try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", extracted.path])
+        guard let found = Self.find(core.file, under: extracted) else {
+            throw InstallError.fileNotFoundInArchive(core.file)
+        }
+        return (found, sha, try CRC32.hex(of: found))
     }
 
     /// Downloads into `dir` and verifies the checksum (when pinned) before anything else sees the file.
