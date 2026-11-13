@@ -23,7 +23,7 @@ Get a Mac from nothing to "controller in hand, games on the TV" through one guid
 | Switch 2 | none viable | — | **Dropped.** No public emulator runs commercial Switch 2 games. Eden NX2, the main experimental attempt, was archived on 2026-11-02. |
 | Switch | Ryubing (Ryujinx fork, MIT) | Yes | **Detect-and-configure only** (see below). Upstream is in maintenance mode. |
 | Wii U | Cemu (MPL-2.0) | **No.** x86 under Rosetta. A Metal backend and native build are in progress. | **Rosetta-tier** (see below). |
-| PS2 | PCSX2 (GPLv3+) | **Not officially.** x86 under Rosetta. The ARMSX2 fork ships macOS arm64. | Native if an official arm64 build exists at pin time. Otherwise Rosetta-tier. |
+| PS2 | PCSX2 (GPLv3+) | **Not officially.** x86 under Rosetta. The ARMSX2 fork ships macOS arm64. | **Rosetta-tier, official PCSX2** (Mike's decision). Switch to native when an official arm64 build ships. |
 | Xbox | xemu (GPLv2) | Believed yes, verify at pin | Assumed to mean **original Xbox**. Xbox 360 (Xenia) has no macOS build. |
 
 **Rosetta tier.** The manifest has an `arch` field. A native `arm64` build is always preferred. An `x86_64` entry is allowed only when marked `rosetta: true`. When one is selected, the wizard installs Rosetta (`softwareupdate --install-rosetta`, admin) and shows a plain warning: "This system depends on Rosetta, which Apple is phasing out after macOS 27." CI fails on any x86-only entry that isn't marked. On a later macOS where Rosetta is gone, these systems are hidden instead of failing at launch.
@@ -209,7 +209,7 @@ Files are copied, the hash is verified, and only then is the original removed. A
 - The per-chip performance table values.
 - Wizard visual design.
 
-## Open decisions for Mike
+## Resolved decisions (Mike, 2026-11-13)
 
-1. **Switch: detect-only, or auto-install Ryubing?** I recommend detect-only (reasons above).
-2. **PS2 when no official arm64 build exists:** official PCSX2 under Rosetta, or the ARMSX2 fork running natively? I recommend official PCSX2 under Rosetta for now. Moving to ARMSX2 is a one-line manifest change, provided its license checks out as GPLv3. What would change my mind: if you don't want Rosetta on the machine at all.
+1. **Switch is detect-and-configure only.** retromac never downloads a Switch emulator and never handles keys or firmware.
+2. **PS2 uses official PCSX2 under Rosetta** until an official arm64 build ships. ARMSX2 stays a possible one-line manifest swap later.
