@@ -236,7 +236,7 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
    - License and arch CI.
    - Systems: NES, SNES, Genesis, N64.
 2. **Updates:** release pipeline, update wizard, self-update, rollback, upstream-bump Action.
-3. **Librarian:** cartridge systems, then Saturn and PS1 with CHD. Redump DAT refresh joins the update wizard.
+3. **Librarian:** cartridge systems, then Saturn and PS1 with CHD. Redump DAT refresh joins the update wizard. It also adds a **Games** wizard step where users drag and drop ROM files, folders or archives. A shared `Importer` in `RetromacCore` handles both the drop and the share inbox: it detects the system, identifies the game against the DATs, and files it (Mike, 2026-11-13: done properly with DAT matching in Phase 3, not header-only in Phase 1).
 4. **Share.**
 5. **Standalones, native first:** Dolphin (GameCube/Wii), xemu, then PS2.
 6. **Rosetta tier and detect-only:** Cemu, then the Ryubing integration.
