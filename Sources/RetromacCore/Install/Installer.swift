@@ -129,12 +129,15 @@ public struct Installer: Sendable {
         }
 
         let current = Set(manifest.cores.map(\.id)), files = Set(manifest.cores.map(\.file))
+        let names = Set(manifest.cores.map(\.libraryName))
         for (id, old) in state.cores.sorted(by: { $0.key < $1.key }) where !current.contains(id) {
             if !files.contains(old.file) { try? fm.removeItem(at: paths.retroarchCores.appending(path: old.file)) }
-            if let name = old.libraryName {
-                let remap = paths.coreRemap(libraryName: name)
+            if let name = old.libraryName, !names.contains(name) {
+                // Only the .rmp retromac wrote; the folder may hold the user's per-game remaps, and removeItem
+                // on a folder is recursive, so it goes only when nothing else is left in it.
+                let remap = paths.coreRemap(libraryName: name), folder = remap.deletingLastPathComponent()
                 try? fm.removeItem(at: remap)
-                try? fm.removeItem(at: remap.deletingLastPathComponent())  // only succeeds once it's empty
+                if (try? fm.contentsOfDirectory(atPath: folder.path))?.isEmpty == true { try? fm.removeItem(at: folder) }
             }
             state.cores[id] = nil
             state.previousCores?[id] = nil

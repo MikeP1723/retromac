@@ -269,3 +269,28 @@ struct DittoDiesRunner: CommandRunner {
     #expect(FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "fake_libretro.dylib").path))
     #expect(try InstallState.load(from: paths.state).cores.keys.sorted() == ["mesen"])
 }
+
+@Test func replacedCoreKeepsUserRemapsAndASharedLibraryName() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let old = try coreEntry(makeCoreZip(in: dir, name: "old_libretro.dylib"), id: "old", file: "old_libretro.dylib")
+    _ = try await installer(manifest(cores: [old]), paths).install(systems: [.nes])
+    let remap = paths.coreRemap(libraryName: "Mesen"), folder = remap.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("a".utf8).write(to: remap)
+    let perGame = folder.appending(path: "Some Game.rmp")
+    try Data("b".utf8).write(to: perGame)
+
+    // Same library name under a new id: retromac's remap still belongs to the current core.
+    let newDir = dir.appending(path: "new"); try FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+    let renamed = try coreEntry(makeCoreZip(in: newDir, name: "new_libretro.dylib"), id: "new", file: "new_libretro.dylib")
+    _ = try await installer(manifest(cores: [renamed]), paths).install(systems: [.nes])
+    #expect(FileManager.default.fileExists(atPath: remap.path))
+
+    // Library name gone too: only retromac's own .rmp goes; the user's per-game remap and its folder stay.
+    let otherDir = dir.appending(path: "other"); try FileManager.default.createDirectory(at: otherDir, withIntermediateDirectories: true)
+    var other = try coreEntry(makeCoreZip(in: otherDir, name: "other_libretro.dylib"), id: "other", file: "other_libretro.dylib")
+    other.libraryName = "Other"
+    _ = try await installer(manifest(cores: [other]), paths).install(systems: [.nes])
+    #expect(!FileManager.default.fileExists(atPath: remap.path))
+    #expect(try read(perGame) == "b")
+}
