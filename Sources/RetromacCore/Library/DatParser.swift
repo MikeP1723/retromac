@@ -16,6 +16,21 @@ public struct DatFile: Codable, Equatable, Sendable {
     public var source: String
     public var version: String
     public var entries: [String: DatEntry]
+    /// Normalized serial (and GameCube/Wii game ID) → game; empty for cartridge DATs.
+    public var serials: [String: DatEntry] = [:]
+}
+
+extension DatFile {
+    enum CodingKeys: String, CodingKey { case system, source, version, entries, serials }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        system = try c.decode(SystemID.self, forKey: .system)
+        source = try c.decode(String.self, forKey: .source)
+        version = try c.decode(String.self, forKey: .version)
+        entries = try c.decode([String: DatEntry].self, forKey: .entries)
+        serials = try c.decodeIfPresent([String: DatEntry].self, forKey: .serials) ?? [:]
+    }
 }
 
 public enum DatError: Error, Equatable {
@@ -26,12 +41,32 @@ public enum DatError: Error, Equatable {
 
 /// Reads logiqx-format DATs as published by No-Intro.
 public enum DatParser {
-    static let systems: [(prefix: String, system: SystemID)] = [
-        ("Nintendo - Nintendo Entertainment System", .nes),
-        ("Nintendo - Super Nintendo Entertainment System", .snes),
-        ("Sega - Mega Drive - Genesis", .genesis),
-        ("Nintendo - Nintendo 64", .n64),
+    /// DAT header names (without trailing "(…)" variants) for each system.
+    static let systems: [String: SystemID] = [
+        "Nintendo - Nintendo Entertainment System": .nes,
+        "Nintendo - Super Nintendo Entertainment System": .snes,
+        "Sega - Mega Drive - Genesis": .genesis,
+        "Nintendo - Nintendo 64": .n64,
+        "Sony - PlayStation": .psx,
+        "Sony - PlayStation 2": .ps2,
+        "Sega - Saturn": .saturn,
+        "Nintendo - GameCube": .gc,
+        "Nintendo - Wii": .wii,
+        "Microsoft - Xbox": .xbox,
     ]
+
+    public static func systemFor(headerName name: String) throws -> SystemID {
+        var base = name.trimmingCharacters(in: .whitespaces)
+        while let range = base.range(of: #"\s*\([^()]*\)$"#, options: .regularExpression) {
+            base.removeSubrange(range)
+        }
+        guard let system = systems[base] else { throw DatError.unknownSystem(name) }
+        // retromac normalizes N64 images to big-endian .z64, so only that DAT's hashes can match.
+        if system == .n64 && (name.contains("(ByteSwapped)") || name.contains("(LittleEndian)")) {
+            throw DatError.unsupportedVariant("use the BigEndian DAT")
+        }
+        return system
+    }
 
     public static func parse(_ data: Data) throws -> DatFile {
         let reader = Reader()
@@ -39,13 +74,7 @@ public enum DatParser {
         parser.delegate = reader
         guard parser.parse(), let name = reader.headerName else { throw DatError.notADat }
 
-        guard let system = systems.first(where: { name.hasPrefix($0.prefix) })?.system else {
-            throw DatError.unknownSystem(name)
-        }
-        // retromac normalizes N64 images to big-endian .z64, so only that DAT's hashes can match.
-        if system == .n64 && (name.contains("(ByteSwapped)") || name.contains("(LittleEndian)")) {
-            throw DatError.unsupportedVariant("use the BigEndian DAT")
-        }
+        let system = try systemFor(headerName: name)
         return DatFile(system: system, source: name, version: reader.headerVersion ?? "", entries: reader.entries)
     }
 

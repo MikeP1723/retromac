@@ -53,13 +53,16 @@ public struct DatStore: Sendable {
         for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let name = file.lastPathComponent
             do {
-                let dat = try DatParser.parse(Data(contentsOf: file))
-                guard !dat.entries.isEmpty else {
+                let data = try Data(contentsOf: file)
+                let isXML = String(decoding: data.prefix(64), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<")
+                let dat = try isXML ? DatParser.parse(data) : ClrMameParser.parse(data)
+                guard !dat.entries.isEmpty || !dat.serials.isEmpty else {
                     outcomes.append(.skipped(file: name, reason: "no games in this DAT"))
                     continue
                 }
                 if var existing = merged[dat.system] {
                     existing.entries.merge(dat.entries) { old, _ in old }
+                    existing.serials.merge(dat.serials) { old, _ in old }
                     existing.source += " + " + dat.source
                     merged[dat.system] = existing
                 } else {
@@ -91,6 +94,11 @@ public struct DatStore: Sendable {
             }
         }
         return dats
+    }
+
+    public func lookup(_ system: SystemID, serial: String) -> DatEntry? {
+        guard let dat = load()[system] else { return nil }
+        return SerialKey.keys(for: serial, system: system).lazy.compactMap { dat.serials[$0] }.first
     }
 
     public func lookup(_ system: SystemID, sha1: [String]) -> DatEntry? {
