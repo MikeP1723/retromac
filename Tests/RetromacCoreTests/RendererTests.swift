@@ -99,7 +99,7 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
 
 @Test func psxGetsDualShockRemap() throws {
     let (paths, files) = try renderBundled([.psx, .nes])
-    let remap = files.first { $0.url == paths.coreRemap(libraryName: "Beetle PSX HW") }
+    let remap = files.first { $0.url == paths.coreRemap(libraryName: "PCSX-ReARMed") }
     #expect(remap?.kind == .retroarchKeys(["input_libretro_device_p1": "517", "input_libretro_device_p2": "517"]))
     let (_, without) = try renderBundled([.nes])
     #expect(!without.contains { $0.url.pathExtension == "rmp" })
@@ -107,7 +107,7 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
 
 @Test func esdeListsOnlyLaunchableDiscFiles() throws {
     let xml = ESDESystems.xml(for: [.psx, .saturn], manifest: try Manifest.bundled())
-    for needle in ["<name>psx</name>", "mednafen_psx_hw_libretro.dylib", "<name>saturn</name>", "mednafen_saturn_libretro.dylib", ".m3u", ".chd", ".cue"] {
+    for needle in ["<name>psx</name>", "pcsx_rearmed_libretro.dylib", "<name>saturn</name>", "mednafen_saturn_libretro.dylib", ".m3u", ".chd", ".cue"] {
         #expect(xml.contains(needle), "missing \(needle)")
     }
     let psx = try #require(xml.range(of: "<name>psx</name>").map { String(xml[$0.lowerBound...]) })
@@ -116,7 +116,7 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
 }
 
 @Test func psxListsPbp() throws {
-    // The importer files PSP-eboot PS1 games as .pbp; Beetle PSX HW plays them.
+    // The importer files PSP-eboot PS1 games as .pbp; PCSX ReARMed plays them.
     let xml = ESDESystems.xml(for: [.psx], manifest: try Manifest.bundled())
     #expect(xml.contains(".pbp"))
 }

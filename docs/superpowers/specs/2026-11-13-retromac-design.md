@@ -69,7 +69,7 @@ What would change my mind: if you're comfortable with the takedown risk to the w
 | Genesis | BlastEm (libretro) | GPLv3 | .md | No-Intro hash | — |
 | N64 | Mupen64Plus-Next (libretro) | GPLv2 | .z64 | No-Intro hash (byte order normalized) | — |
 | Saturn | Beetle Saturn (libretro) | GPLv2 | .chd | Redump per-track | BIOS (required) |
-| PS1 | Beetle PSX HW (libretro) | GPLv2 | .chd, .m3u | Redump per-track | BIOS (required) |
+| PS1 | PCSX ReARMed (libretro) — Beetle PSX HW dropped: its Vulkan output freezes on macOS, GL renders black, software mode too slow | GPLv2 | .chd, .m3u | Redump per-track | BIOS (required) |
 | PS2 | PCSX2 (standalone) | GPLv3+ | .chd | Redump | BIOS (required) |
 | GameCube / Wii | Dolphin (standalone) | GPLv2+ | .rvz | Redump, then disc header game ID | — |
 | Wii U | Cemu (standalone) | MPL-2.0 | .wua | Title ID from package metadata | Files only. Disc-image keys are out of scope, so encrypted .wud/.wux go to `_Unidentified`. |
