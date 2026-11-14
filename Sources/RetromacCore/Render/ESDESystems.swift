@@ -38,6 +38,27 @@ public enum ESDESystems {
         return out + "</systemList>\n"
     }
 
+    /// ES-DE's own find rules expect RetroArch in /Applications; this points it at retromac's copy.
+    public static func findRules(retroarch: URL, cores: URL) -> String {
+        """
+        <?xml version="1.0"?>
+        <!-- Managed by retromac — edits will be overwritten -->
+        <ruleList>
+            <emulator name="RETROARCH">
+                <rule type="staticpath">
+                    <entry>\(ESDESettings.xmlEscape(retroarch.path))</entry>
+                </rule>
+            </emulator>
+            <core name="RETROARCH">
+                <rule type="corepath">
+                    <entry>\(ESDESettings.xmlEscape(cores.path))</entry>
+                </rule>
+            </core>
+        </ruleList>
+
+        """
+    }
+
     /// Replaces the user's same-named <system> entries with ours and keeps all others.
     public static func merge(existing: String?, ours: String) throws -> String {
         let doc = try XMLDocument(xmlString: existing ?? ours)

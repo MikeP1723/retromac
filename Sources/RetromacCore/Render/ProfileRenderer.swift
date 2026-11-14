@@ -60,6 +60,8 @@ public enum ProfileRenderer {
         }
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
+        files.append(RenderedFile(url: paths.esdeFindRules,
+                                  kind: .whole(ESDESystems.findRules(retroarch: paths.retroarchExecutable, cores: paths.retroarchCores))))
         files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: p.systems, manifest: manifest))))
 
         for system in p.systems {
