@@ -294,3 +294,74 @@ struct DittoDiesRunner: CommandRunner {
     #expect(!FileManager.default.fileExists(atPath: remap.path))
     #expect(try read(perGame) == "b")
 }
+
+func makeAppZip(in dir: URL, appName: String = "Fake.app", version: String = "1.0") throws -> URL {
+    let src = dir.appending(path: "zipsrc-\(UUID().uuidString)")
+    try writePlist(version: version, to: src.appending(path: appName))
+    try write("license", to: src.appending(path: "LICENSE.txt"))
+    let zip = dir.appending(path: "app-\(UUID().uuidString).zip")
+    // Like xemu's release zip: the app and a LICENSE.txt at the top level.
+    try ProcessRunner().run("/usr/bin/ditto", ["-c", "-k", src.path, zip.path])
+    return zip
+}
+
+private func assetZip(in dir: URL, fileName: String = "xbox_hdd.qcow2", bytes: String = "blank disk") throws -> URL {
+    let staging = dir.appending(path: "asset-\(UUID().uuidString)")
+    try write(bytes, to: staging.appending(path: fileName))
+    let zip = dir.appending(path: "asset-\(UUID().uuidString).zip")
+    try ProcessRunner().run("/usr/bin/ditto", ["-c", "-k", staging.appending(path: fileName).path, zip.path])
+    return zip
+}
+
+private func hddAsset(_ zip: URL, sha256: String? = nil) throws -> AssetEntry {
+    AssetEntry(id: "xemu-hdd", version: "1.0", url: host.serve(zip, host: "github.com"), sha256: try sha256 ?? SHA256File.hex(of: zip),
+               license: "MIT", system: .xbox, fileName: "xbox_hdd.qcow2")
+}
+
+@Test func installsAppFromZip() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let report = try await installer(manifest(apps: [try appEntry(makeAppZip(in: dir, version: "0.8"), version: "0.8")]), paths).install(systems: [])
+    #expect(report.installed == ["fake"])
+    #expect(Installer.bundleVersion(of: apps.appending(path: "Fake.app")) == "0.8")
+}
+
+@Test func standaloneInstalledOnlyForItsSystems() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    var entry = try appEntry(makeAppZip(in: dir))
+    entry.systems = [.xbox]
+    #expect(try await installer(manifest(apps: [entry]), paths).install(systems: [.nes]).installed.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: apps.appending(path: "Fake.app").path))
+    #expect(try await installer(manifest(apps: [entry]), paths).install(systems: [.xbox]).installed == ["fake"])
+}
+
+@Test func assetInstalledUnzippedOnce() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    var m = manifest(); m.assets = [try hddAsset(assetZip(in: dir))]
+    #expect(try await installer(m, paths).install(systems: [.nes]).installed.isEmpty)
+    #expect(try await installer(m, paths).install(systems: [.xbox]).installed == ["xemu-hdd"])
+    #expect(paths.assetTarget(m.assets[0]) == paths.xemuHDD)
+    #expect(try read(paths.xemuHDD) == "blank disk")
+}
+
+@Test func existingHardDiskIsNeverReplaced() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    try write("saves", to: paths.xemuHDD)
+    var m = manifest(); m.assets = [try hddAsset(assetZip(in: dir))]
+    #expect(try await installer(m, paths).install(systems: [.xbox]).installed.isEmpty)
+    _ = try await installer(m, paths).install(systems: [.xbox])
+    #expect(try read(paths.xemuHDD) == "saves")
+}
+
+@Test func assetShaMismatchWritesNothing() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let zip = try assetZip(in: dir)
+    var m = manifest(); m.assets = [try hddAsset(zip, sha256: String(repeating: "0", count: 64))]
+    await #expect(throws: InstallError.checksumMismatch(id: "xemu-hdd", expected: String(repeating: "0", count: 64), actual: try SHA256File.hex(of: zip))) {
+        try await installer(m, paths).install(systems: [.xbox])
+    }
+    #expect(!FileManager.default.fileExists(atPath: paths.xemuHDD.path))
+}
