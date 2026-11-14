@@ -54,3 +54,15 @@ import Testing
         "bsnes: libraryName a/b is not a single path component",
     ])
 }
+@Test func rejectsUnsafeIds() {
+    var m = Manifest.fixture(); m.cores[0].id = "../../x"
+    #expect(ManifestPolicy.violations(m).contains("../../x: id ../../x is not a single path component"))
+}
+@Test func selfEntryMustComeFromThisRepo() {
+    var m = Manifest.fixture()
+    m.retromac = SelfEntry(version: "0.2.0", url: URL(string: "https://github.com/someone/else/releases/download/v0.2.0/retromac.zip")!,
+                           sha256: String(repeating: "d", count: 64))
+    #expect(ManifestPolicy.violations(m) == ["retromac: url must be a MikeP1723/retromac release asset"])
+    m.retromac?.url = URL(string: "https://github.com/MikeP1723/retromac/releases/download/v0.2.0/retromac.zip")!
+    #expect(ManifestPolicy.violations(m).isEmpty)
+}

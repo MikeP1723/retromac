@@ -12,13 +12,13 @@ public enum ApplyError: Error, Equatable {
     case appRunning(String)
 }
 
-public struct Applier {
+public struct Applier: Sendable {
     let paths: Paths
     /// App bundle names (e.g. "ES-DE.app"); bundle IDs aren't reliable (ES-DE's is its version).
     let apps: [String]
-    let isRunning: (String) -> Bool
+    let isRunning: @Sendable (String) -> Bool
 
-    public init(paths: Paths, apps: [String], isRunning: @escaping (String) -> Bool) {
+    public init(paths: Paths, apps: [String], isRunning: @escaping @Sendable (String) -> Bool) {
         self.paths = paths
         self.apps = apps
         self.isRunning = isRunning

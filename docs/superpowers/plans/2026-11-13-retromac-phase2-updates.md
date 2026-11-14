@@ -4,16 +4,19 @@
 
 **Goal:** Update retromac itself, plus every emulator and core it manages, through an in-app wizard with staged, sha-verified swaps and one-generation rollback. A release pipeline and a weekly upstream-bump Action keep the pins current.
 
-**Architecture:** GitHub Releases on `MikeP1723/retromac` is the single update channel. Each release carries `retromac.zip` and a release `manifest.json` (the bundled manifest plus a `retromac` self-entry). `UpdatePlanner` is pure and diffs `InstallState` against the latest manifest. `Updater` stages through `Installer`, swaps with `previous/` as the rollback slot, then re-renders and re-applies configs. `SelfUpdater` stages the zip and hands off to a detached swap script. Maintainer-side automation lives in `retromac-tool` subcommands plus two workflows.
+**Architecture:** GitHub Releases on `MikeP1723/retromac` is the single update channel. Each release carries `retromac.zip` and a release `manifest.json` (the bundled manifest plus a `retromac` self-entry). `UpdatePlanner` is pure. It diffs `InstallState` against the latest manifest for apps, and against libretro's buildbot `.index-extended` for unpinned cores. `Updater` stages through `Installer`, swaps with `previous/` as the rollback slot, then re-renders and re-applies configs. `SelfUpdater` stages the zip and hands off to a detached swap script. Maintainer-side automation lives in `retromac-tool` subcommands plus two workflows.
 
 **Tech Stack:** Same as Phase 1. No new dependencies. Workflows use `gh` (preinstalled on GitHub macOS runners).
 
 **Spec:** `docs/superpowers/specs/2026-11-13-retromac-design.md` (section "Updates"). **Requires Phase 1 complete:** `Manifest`, `ManifestPolicy`, `Paths`, `Installer`, `InstallState`, `Applier`, `ProfileRenderer`, `BackupStore`, `retromac-tool`, `scripts/bundle.sh`.
 
-> **Revisit before executing.** Phase 1 changed several assumptions this plan was written against (see the spec's "Findings from Phase 1 verification" and the Phase 1 ledger rulings):
-> - `AppEntry.bundleID` was removed, so running-app checks use app bundle names (`apps:`), not `bundleIDs:`.
-> - Core `sha256` is optional. Unpinned cores can't be diffed by sha, so the planner needs a "refresh unpinned cores" rule.
-> - `CommandRunner.run` gained an `input:` parameter.
+> **Revised 2026-11-13 after Phase 1 merged (PR #1).** This revision incorporates the following:
+> - `AppEntry` has no `bundleID`; running-app checks use app bundle names (`apps:`).
+> - `CommandRunner.run(_:_:input:)` takes stdin input.
+> - Core `sha256` is optional: cores are fetched unpinned from `buildbot.libretro.com/nightly/apple/osx/arm64/latest/`.
+> - Test fixtures are served over https URLs by `FixtureDownloader`, because `URLSessionDownloader` refuses non-https.
+>
+> **Core rebuild detection (verified 2026-11-13).** `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/.index-extended` lists `<date> <crc32> <file>.zip` per core. The CRC32 is of the **dylib inside** the zip, not of the zip itself (checked: mesen zip CRC `4019ca04`, dylib CRC `4a3d52b1` = index value). retromac records the installed dylib's CRC32 and offers a rebuild when the index value differs.
 
 ## Global Constraints
 
@@ -22,9 +25,10 @@
 - A release manifest that has any `ManifestPolicy` violation is rejected as a whole, and nothing from it is offered.
 - The retromac self-entry URL host must be `github.com`. The extracted bundle ID must be `petersoft.retromac`.
 - Nothing is swapped until every selected component has been staged and sha-verified.
-- Updates are refused while any manifest app's bundle ID is running.
+- Updates are refused while any manifest app (matched by bundle name, e.g. `ES-DE.app`) is running.
 - Apps with `managed == false` are never replaced unless the user adopts them explicitly.
 - The rollback slot is `~/retromac/previous/` and holds exactly one generation per component.
+- Tests never use `file://` URLs. Release and asset fixtures are served through `FixtureDownloader` keyed by https URLs (Phase 1 `InstallerTests.swift`).
 - The automatic update check runs at most once every 24h (last-check time in `UserDefaults`), plus on demand with ⌘U. Nothing is installed without the user confirming in the wizard.
 
 ## Review Focus
@@ -53,17 +57,21 @@
   - Add `var upstream: Upstream?` to `AppEntry` and `CoreEntry`.
   - `struct SelfEntry: Codable, Equatable, Sendable { var version: String; var url: URL; var sha256: String }`. Add `var retromac: SelfEntry?` to `Manifest`. It's nil in the bundled manifest and set in release manifests.
   - `ManifestPolicy.violations` additionally checks `retromac`. Its sha must be 64 lowercase hex and its host must be exactly `github.com`. The violation id is `retromac`.
-  - Add to `InstallState`: `var previousApps: [String: App]?` and `var previousCores: [String: Core]?` (optional, so Phase 1 state files still decode).
+  - Add to `InstallState`: `var previousApps: [String: App]?` and `var previousCores: [String: Core]?`, plus `var crc32: String?` on `InstallState.Core`. All are optional, so Phase 1 state files still decode. `crc32` is the lowercase 8-hex CRC32 of the installed dylib.
+  - `enum CRC32 { static func hex(of: URL) throws -> String }`, table-driven in Swift (no zlib dependency). Test: CRC32 of the 9 bytes `"123456789"` is `cbf43926`.
+  - `Installer` records `crc32` when it installs a core.
+  - `struct CoreIndex: Equatable, Sendable { struct Entry: Equatable, Sendable { var date: String; var crc32: String }; var entries: [String: Entry]; static let url = URL(string: "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/.index-extended")!; static func parse(_ text: String) -> CoreIndex }`. Keys are archive names (`mesen_libretro.dylib.zip`). Lines that don't match `<date> <8 hex> <name>` are skipped.
   - Add to `Paths`: `previous` (`~/retromac/previous`) and `appliedManifest` (`~/retromac/manifest.json`).
   - `enum SemVer { static func compare(_ a: String, _ b: String) -> ComparisonResult }`. Strip a leading `v`, split on `.`, and compare integer components (missing = 0). A non-numeric component compares as 0.
   - `enum ComponentKind: String, Codable, Sendable { case app, core }`
   - `struct ComponentUpdate: Equatable, Sendable, Identifiable { var id: String; var kind: ComponentKind; var installed: String; var available: String; var managed: Bool; var license: String; var previousLicense: String?; var requiresRosetta: Bool }`. `previousLicense` is non-nil only when the license changed.
   - `struct UpdatePlan: Equatable, Sendable { var updates: [ComponentUpdate]; var retromacUpdate: SelfEntry?; var blockedByMinAppVersion: String? }`
-  - `enum UpdatePlanner { static func plan(state: InstallState, applied: Manifest, latest: Manifest, appVersion: String) -> UpdatePlan }`
+  - `enum UpdatePlanner { static func plan(state: InstallState, applied: Manifest, latest: Manifest, coreIndex: CoreIndex?, appVersion: String) -> UpdatePlan }`
     - If `SemVer.compare(appVersion, latest.minAppVersion) == .orderedAscending`: set `blockedByMinAppVersion = latest.minAppVersion` and `updates = []`.
     - `retromacUpdate = latest.retromac` when its version is greater than `appVersion`.
     - An app is offered when `state.apps[id]` exists and its version or sha differs from the latest entry. `managed` comes from state.
-    - A core is offered when `state.cores[id]` exists and its sha differs.
+    - A **pinned** core (`sha256 != nil`) is offered when `state.cores[id]` exists and its sha differs.
+    - An **unpinned** core is offered when `state.cores[id]` exists, `coreIndex` has `<file>.zip`, and the index CRC differs from `state.cores[id].crc32`. Its `available` is `"rebuild <index date>"`. A core with `crc32 == nil` (installed before this phase) is offered once, so its CRC gets recorded.
     - Components missing from `state` are never offered, because installing new systems belongs to the main wizard.
     - `license`, `previousLicense`, and `requiresRosetta` come from comparing the `applied` and `latest` entries.
     - Output is sorted by `id`.
@@ -80,6 +88,10 @@
 @Test func flagsLicenseChange() { /* latest core mesen license "GPL-2.0-only" (applied GPL-3.0-or-later), sha changed → previousLicense == "GPL-3.0-or-later" */ }
 @Test func flagsRosetta() { /* latest retroarch arch x86_64 rosetta true, version bump → requiresRosetta == true */ }
 @Test func ignoresComponentsNotInstalled() { /* state has only mesen; latest bumps bsnes → updates.isEmpty */ }
+@Test func offersUnpinnedCoreRebuild() { /* mesen unpinned, state crc32 "4a3d52b1"; index mesen_libretro.dylib.zip crc "deadbeef" date "2026-11-20" → one ComponentUpdate(id:"mesen", kind:.core, installed:"0.9.9", available:"rebuild 2026-11-20", ...) */ }
+@Test func unpinnedCoreUpToDate() { /* index crc == state crc → no update */ }
+@Test func parsesCoreIndex() { /* "2026-11-13 4a3d52b1 mesen_libretro.dylib.zip\ngarbage\n" → entries["mesen_libretro.dylib.zip"] == .init(date:"2026-11-13", crc32:"4a3d52b1"), count 1 */ }
+@Test func crc32KnownVector() { /* CRC32 of "123456789" == "cbf43926" */ }
 @Test func unmanagedAppListedAsUnmanaged() { /* state retroarch managed:false v0.9; latest 1.0 → managed == false */ }
 @Test func minAppVersionBlocksComponents() {
     /* latest.minAppVersion "0.3.0", retromac SelfEntry version "0.3.0", appVersion "0.2.0", retroarch bumped
@@ -111,9 +123,10 @@
     - Downloads `<apiBase>/releases/latest` into a temp dir and decodes `tag_name` and `assets[].{name, browser_download_url}`.
     - Downloads the asset named `manifest.json` (throws `noManifestAsset` if absent) and decodes it.
     - Throws `.policy(violations)` if any violations exist.
-    - Sets the header `Accept: application/vnd.github+json` when the scheme is https. That means `URLSessionDownloader` gains an optional `headers: [String: String]` init parameter.
+    - `URLSessionDownloader` gains an optional `headers: [String: String]` init parameter. `ReleaseClient`'s production downloader sets `Accept: application/vnd.github+json`.
+  - `func coreIndex() async throws -> CoreIndex` downloads `CoreIndex.url` and parses it. It's a separate method, so a failing index never blocks app updates.
 
-- [ ] **Step 1: Write the failing tests.** These use `file://` fixtures: a temp dir containing `releases/latest` (JSON whose `browser_download_url` points to a `file://` manifest).
+- [ ] **Step 1: Write the failing tests.** Serve `https://api.github.com/repos/MikeP1723/retromac/releases/latest` and the manifest's `browser_download_url` (an `https://github.com/...` URL) through `FixtureDownloader`, which gains `serve(_ local: URL, at url: URL)` to register an exact URL.
 
 ```swift
 @Test func returnsValidatedManifest() async throws { /* valid fixture manifest → tag "v0.2.0", manifest == fixture */ }
@@ -139,15 +152,15 @@
 - Consumes: `Installer`, `InstallState`, `Paths`, `Applier`, `ApplyReport`, `ProfileRenderer`, `Profile`, `DisplayRules`, `Manifest`, `ComponentUpdate`, `UpdateError`, `FileOps` (below)
 - Produces:
   - In `Installer`:
-    - `func stageApp(_ e: AppEntry, in dir: URL) async throws -> URL`: download, verify sha, mount, `ditto` into `dir`, detach. Returns the staged `.app` URL.
-    - `func stageCore(_ e: CoreEntry, in dir: URL) async throws -> URL`: download, verify, extract. Returns the staged dylib URL.
+    - `func stageApp(_ e: AppEntry) async throws -> URL`: download, verify sha, mount (feeding the license-agreement `Y`s as Phase 1 does), and `ditto` into a `.retromac-staging-<uuid>` dir inside `paths.applications`, so the later swap is a same-volume rename. Then detach. Returns the staged `.app` URL.
+    - `func stageCore(_ e: CoreEntry, in dir: URL) async throws -> (dylib: URL, sha256: String, crc32: String)`: download, verify the sha when pinned, extract, reject symlinks. Returns the staged dylib and its hashes.
     - `install(systems:)` is reimplemented on top of these, and Phase 1 tests stay green.
   - `protocol FileOps: Sendable { func move(_ from: URL, to: URL) throws; func removeIfExists(_ url: URL) throws }` and `struct RealFileOps: FileOps`. These exist so the test can inject a failure.
   - `struct UpdateReport: Equatable, Sendable { var updated: [String]; var skipped: [String]; var config: ApplyReport? }`
-  - `struct Updater { init(paths: Paths, installer: Installer, applier: Applier, bundleIDs: [String], isRunning: @escaping (String) -> Bool, fileOps: FileOps = RealFileOps()); func apply(_ updates: [ComponentUpdate], adopt: Set<String>, latest: Manifest, profile: Profile, rules: DisplayRules) async throws -> UpdateReport; func rollback(_ id: String) throws }`
+  - `struct Updater { init(paths: Paths, installer: Installer, applier: Applier, apps: [String], isRunning: @escaping (String) -> Bool, fileOps: FileOps = RealFileOps()); func apply(_ updates: [ComponentUpdate], adopt: Set<String>, latest: Manifest, profile: Profile, rules: DisplayRules) async throws -> UpdateReport; func rollback(_ id: String) throws }`
 
 **`apply` algorithm:**
-1. If any bundle ID is running, throw `.appRunning`.
+1. If any app in `apps` is running, throw `.appRunning`.
 2. Unmanaged updates whose id isn't in `adopt` go to `skipped` with `"<id>: not managed by retromac"`.
 3. Stage **all** remaining components into one temp dir. Any staging error aborts before any swap.
 4. Swap each component:
@@ -167,7 +180,8 @@
 
 ```swift
 @Test func updatesManagedCoreAndKeepsPrevious() async throws { /* state mesen sha A; latest sha B (new fixture zip) → cores/<file> has new bytes; previous/<file> has old bytes; state.cores["mesen"].sha256 == B; previousCores["mesen"].sha256 == A */ }
-@Test func refusesWhileEmulatorRunning() async throws { /* isRunning true for retroarch bundle id → throws .appRunning; downloader never called (counting fake Downloader) */ }
+@Test func refusesWhileEmulatorRunning() async throws { /* isRunning true for "RetroArch.app" → throws .appRunning("RetroArch.app"); downloader never called (counting fake Downloader) */ }
+@Test func unpinnedCoreRebuildRecordsNewCrc() async throws { /* unpinned mesen, new fixture zip → state.cores["mesen"].crc32 == CRC32 of new dylib; previousCores holds the old entry */ }
 @Test func skipsUnmanagedUnlessAdopted() async throws { /* retroarch managed:false → skipped ["retroarch: not managed by retromac"]; with adopt ["retroarch"] → updated, original Fake.app in previous/ */ }
 @Test func stagingFailureSwapsNothing() async throws { /* two updates, second has wrong sha → throws checksumMismatch; first component unchanged on disk and in state */ }
 @Test func moveInFailureRestoresCurrent() async throws { /* FileOps fake that throws on move into cores dir → error rethrown; cores/<file> still has old bytes; previous/ empty; state unchanged */ }
@@ -253,9 +267,9 @@
   - `endpoint` for each kind. The gitlab project `es-de/emulationstation-de` encodes to `es-de%2Femulationstation-de`.
   - A libretro listing that includes a non-version `href="../"` link, which must be ignored.
 - [ ] **Step 2: Run the tests.** Expected: FAIL.
-- [ ] **Step 3: Implement. Add `upstream` to every bundled manifest entry**, using the sources Phase 1 Task 7 resolved:
-  - RetroArch and cores: `libretroStable` with their URL templates.
-  - ES-DE: `gitlabRelease` on `es-de/emulationstation-de`, with the arm64 dmg regex.
+- [ ] **Step 3: Implement. Add `upstream` to both app entries.** Cores get none, because their updates come from `.index-extended` at runtime.
+  - RetroArch: `libretroStable`, template `https://buildbot.libretro.com/stable/{version}/apple/osx/universal/RetroArch_Metal.dmg`.
+  - ES-DE: `gitlabRelease` on `es-de/emulationstation-de`, regex `^ES-DE_.*-arm64\.dmg$`. GitLab's asset `url` is the `/-/package_files/<id>/download` form that Phase 1 pinned.
 - [ ] **Step 4: Run `swift test`, then `swift run retromac-tool check-upstream`.** Expected: tests pass. Every entry prints `same` or `bump`, and none print `FAIL`.
 - [ ] **Step 5: Commit:** `git add -A && git commit -m "feat: upstream resolver and check-upstream/release-manifest commands"`
 
@@ -287,6 +301,7 @@
    - `- [ ] Release notes reviewed for config-format changes (bump minAppVersion if the renderer must change)`
 
 - [ ] **Step 1: Write the bundle.sh change and both workflows.**
+- [ ] **Step 1b: Ask Mike first,** because this is a repository settings change. With his OK, allow Actions to open PRs: `gh api -X PUT repos/MikeP1723/retromac/actions/permissions/workflow -f default_workflow_permissions=write -F can_approve_pull_request_reviews=false`, then `gh api repos/MikeP1723/retromac/actions/permissions/workflow` to confirm. Without this, `gh pr create` in the bump job fails with "GitHub Actions is not permitted to create or approve pull requests".
 - [ ] **Step 2: Local check.** Run `RETROMAC_VERSION=0.9.9 scripts/bundle.sh && /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/retromac.app/Contents/Info.plist`. Expected: `0.9.9`. Running `codesign --verify --strict build/retromac.app` exits 0.
 - [ ] **Step 3: Lint both workflows with `actionlint`** (`brew install actionlint` if missing; it's a dev tool only). Expected: no findings.
 - [ ] **Step 4: Commit:** `git add -A && git commit -m "ci: release and weekly upstream-bump workflows"`
@@ -302,7 +317,7 @@
 **Interfaces:**
 - Consumes: `ReleaseClient`, `UpdatePlanner`, `Updater`, `SelfUpdater`, `InstallState`, `Manifest.bundled()`, `Paths.appliedManifest`, `RunningApps`, `DisplayRules.bundled()`, `BackupStore`
 - Produces: `@Observable @MainActor final class UpdateModel`:
-  - `func check(force: Bool) async`. It skips the check if `!force` and less than 24h have passed since `UserDefaults` `lastUpdateCheck`. Otherwise it loads `applied` (from `paths.appliedManifest`, falling back to `Manifest.bundled()`), calls `ReleaseClient.latest()`, and runs `UpdatePlanner.plan(…, appVersion: Bundle.main CFBundleShortVersionString)`.
+  - `func check(force: Bool) async`. It skips the check if `!force` and less than 24h have passed since `UserDefaults` `lastUpdateCheck`. Otherwise it loads `applied` (from `paths.appliedManifest`, falling back to `Manifest.bundled()`), calls `ReleaseClient.latest()` and `ReleaseClient.coreIndex()`, and runs `UpdatePlanner.plan(…, coreIndex:, appVersion: Bundle.main CFBundleShortVersionString)`. If the index fetch fails, it logs the error and passes `nil`, so app updates still show.
   - `var plan: UpdatePlan?`, `var selected: Set<String>`, `var adopt: Set<String>`, `var log: [String]`, `var error: String?`
   - `func applySelected() async`
   - `func updateSelf() async`. It stages, launches `/bin/sh -c <swapScript>` via `Process` (not waited on), then calls `NSApp.terminate(nil)`.
@@ -322,9 +337,9 @@
 
 - [ ] **Step 1: Implement.**
 - [ ] **Step 2: Run `swift build && swift test`.** Expected: success.
-- [ ] **Step 3: Manual check against a local fake release.** Add a hidden `RETROMAC_RELEASE_API` environment override, honored only in `#if DEBUG` builds, that points `ReleaseClient.apiBase` at a `file://` fixture dir.
-  - Build a fixture release whose manifest bumps one core.
-  - Run `RETROMAC_RELEASE_API=file:///tmp/rm-release swift run retromac`.
+- [ ] **Step 3: Manual check against a local fake release.** Add a hidden `RETROMAC_RELEASE_FIXTURES=<dir>` environment override, honored only in `#if DEBUG` builds. It swaps the downloader for one that serves `<dir>/<url host>/<url path>` for any https URL, so the code paths stay the same as production.
+  - Build a fixture release whose manifest bumps one pinned test entry, plus a fixture `.index-extended` with a changed CRC for one installed core.
+  - Run `RETROMAC_RELEASE_FIXTURES=<scratchpad>/rm-release swift run retromac`.
   - Press ⌘U. Expected: the sheet lists the bumped core, Update Selected swaps it, and Revert restores it. Confirm the core file sha before and after with `shasum`.
 - [ ] **Step 4: Commit:** `git add -A && git commit -m "feat: update wizard UI"`
 
@@ -334,7 +349,7 @@
 
 Creating the GitHub repo, pushing, and tagging are outward-facing. **Confirm each with Mike before doing it.**
 
-- [ ] **Step 1: Ask Mike to confirm.** If `MikeP1723/retromac` doesn't exist, ask Mike to confirm creating it as **public**, then run `gh repo create MikeP1723/retromac --public --source . --push`. Expected: `ci.yml` passes on `main`.
+- [ ] **Step 1: Confirm CI is green on `main`** (`gh run list --branch main --limit 1`). The repo `MikeP1723/retromac` already exists; the remote is `git@github.com:MikeP1723/retromac.git`.
 - [ ] **Step 2: Tag `v0.1.0` and push the tag** (after confirming). Expected: `release.yml` publishes `retromac.zip` and `manifest.json`. Run `gh release view v0.1.0 --json assets -q '.assets[].name'` and confirm both names.
 - [ ] **Step 3: Install the `v0.1.0` zip into `/Applications` and run it.** ⌘U should report "up to date".
 - [ ] **Step 4: Trigger `upstream-bump.yml` via `gh workflow run upstream-bump.yml`.** Expected: either no diff or a PR with the checklist. Review and merge only with Mike's go-ahead.

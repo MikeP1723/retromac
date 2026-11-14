@@ -14,6 +14,10 @@ final class FixtureDownloader: Downloader, @unchecked Sendable {
         return url
     }
 
+    func serve(_ local: URL, at url: URL) {
+        lock.withLock { files[url] = local }
+    }
+
     func download(_ url: URL, to dest: URL) async throws {
         guard let local = lock.withLock({ files[url] }) else { throw URLError(.fileDoesNotExist) }
         try FileManager.default.copyItem(at: local, to: dest)
@@ -77,7 +81,8 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
     #expect(report.installed == ["mesen"])
     #expect(try read(paths.retroarchCores.appending(path: "fake_libretro.dylib")) == "core")
     let state = try InstallState.load(from: paths.state)
-    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib"))
+    #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib",
+                                          crc32: "6b8d854f"))
     #expect(state.manifestVersion == 3)
 }
 @Test func shaMismatchInstallsNothing() async throws {

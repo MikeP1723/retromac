@@ -1,0 +1,45 @@
+name: Upstream bump
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+defaults:
+  run:
+    # bash -eo pipefail: without pipefail, `check-upstream | tee` reports tee's exit status
+    # and a failed check would pass silently every week.
+    shell: bash
+jobs:
+  bump:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check upstream
+        run: swift run retromac-tool check-upstream --write | tee bump.txt
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then
+            echo "Everything is current."
+            exit 0
+          fi
+          # PRs opened with GITHUB_TOKEN don't trigger ci.yml, so verify here.
+          swift test
+          swift run retromac-tool verify-manifest
+          branch="upstream-bump/${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Upstream bump $(date +%F)"
+          git push origin "$branch"
+          {
+            cat bump.txt
+            echo
+            echo "- [ ] License unchanged for each bumped component (check upstream LICENSE/.info)"
+            echo "- [ ] Builds are arm64 or universal"
+            echo "- [ ] Release notes reviewed for config-format changes (bump minAppVersion if the renderer must change)"
+          } > body.md
+          gh pr create --title "Upstream bump $(date +%F)" --body-file body.md

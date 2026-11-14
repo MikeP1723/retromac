@@ -11,7 +11,9 @@
       "license": "GPL-3.0-or-later",
       "arch": "universal",
       "rosetta": false,
-      "appName": "RetroArch.app"
+      "appName": "RetroArch.app",
+      "upstream": { "kind": "libretroStable", "project": "RetroArch",
+                    "assetPattern": "https://buildbot.libretro.com/stable/{version}/apple/osx/universal/RetroArch_Metal.dmg" }
     },
     {
       "id": "esde",
@@ -21,7 +23,9 @@
       "license": "MIT",
       "arch": "arm64",
       "rosetta": false,
-      "appName": "ES-DE.app"
+      "appName": "ES-DE.app",
+      "upstream": { "kind": "gitlabRelease", "project": "es-de/emulationstation-de",
+                    "assetPattern": "^ES-DE_.*-arm64\\.dmg$" }
     }
   ],
   "cores": [
