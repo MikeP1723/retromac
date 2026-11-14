@@ -125,6 +125,10 @@ final class UpdateModel {
             log.append("Self-update only works from retromac.app.")
             return
         }
+        if let reason = SelfUpdater.cannotReplace(bundle: target) {
+            log.append(reason)
+            return
+        }
         busy = true
         defer { busy = false }
         do {

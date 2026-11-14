@@ -18,6 +18,8 @@ public enum ManifestPolicy {
     public static let allowedHosts: Set<String> = ["buildbot.libretro.com", "gitlab.com", "github.com"]
     /// libretro publishes macOS cores only at mutable `latest/` URLs, so these may be unpinned.
     static let unpinnedCoreHost = "buildbot.libretro.com"
+    /// retromac only ever updates itself from its own repository's releases.
+    static let selfReleasePath = "/MikeP1723/retromac/releases/download/"
 
     public static func violations(_ m: Manifest) -> [String] {
         var out: [String] = []
@@ -25,7 +27,7 @@ public enum ManifestPolicy {
             out += common(app.id, app.license, app.arch, app.rosetta, app.url)
             if !isSHA256(app.sha256) { out.append("\(app.id): sha256 must be 64 lowercase hex chars") }
             out += transport(app.id, app.url)
-            out += unsafe(app.id, ["appName": app.appName])
+            out += unsafe(app.id, ["id": app.id, "appName": app.appName])
         }
         for core in m.cores {
             out += common(core.id, core.license, core.arch, core.rosetta, core.url)
@@ -35,12 +37,16 @@ public enum ManifestPolicy {
                 out.append("\(core.id): sha256 may be omitted only for cores on \(unpinnedCoreHost)")
             }
             out += transport(core.id, core.url)
-            out += unsafe(core.id, ["file": core.file, "libraryName": core.libraryName])
+            out += unsafe(core.id, ["id": core.id, "file": core.file, "libraryName": core.libraryName])
         }
         if let app = m.retromac {
             if !isSHA256(app.sha256) { out.append("retromac: sha256 must be 64 lowercase hex chars") }
             out += transport("retromac", app.url)
-            if app.url.host() != "github.com" { out.append("retromac: url host must be github.com") }
+            if app.url.host() != "github.com" {
+                out.append("retromac: url host must be github.com")
+            } else if !app.url.path().hasPrefix(selfReleasePath) {
+                out.append("retromac: url must be a MikeP1723/retromac release asset")
+            }
         }
         return out
     }

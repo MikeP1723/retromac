@@ -23,8 +23,8 @@ func selfRelease(bundleID: String = "petersoft.retromac", version: String = "0.2
     #expect(script == """
         while kill -0 42 2>/dev/null; do sleep 0.2; done
         rm -rf '/Users/m/retromac/previous/retromac.app'
-        mv '/Applications/retromac.app' '/Users/m/retromac/previous/retromac.app' || exit 1
-        if ! mv '/t/x/retromac.app' '/Applications/retromac.app'; then mv '/Users/m/retromac/previous/retromac.app' '/Applications/retromac.app'; exit 1; fi
+        if ! mv '/Applications/retromac.app' '/Users/m/retromac/previous/retromac.app'; then open '/Applications/retromac.app'; exit 1; fi
+        if ! mv '/t/x/retromac.app' '/Applications/retromac.app'; then mv '/Users/m/retromac/previous/retromac.app' '/Applications/retromac.app'; fi
         open '/Applications/retromac.app'
 
         """)
@@ -73,4 +73,22 @@ func selfRelease(bundleID: String = "petersoft.retromac", version: String = "0.2
     try ProcessRunner().run("/bin/sh", ["-c", script])
     #expect(try read(target.appending(path: "v")) == "new")
     #expect(try read(previous.appending(path: "v")) == "old")
+}
+@Test func refusesTranslocatedOrUnwritableBundles() throws {
+    let translocated = URL(filePath: "/private/var/folders/ab/T/AppTranslocation/1234/d/retromac.app")
+    #expect(SelfUpdater.cannotReplace(bundle: translocated)?.contains("Applications") == true)
+
+    let dir = try makeTempDir()
+    let locked = dir.appending(path: "locked")
+    try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+    #expect(SelfUpdater.cannotReplace(bundle: locked.appending(path: "retromac.app")) != nil)
+
+    #expect(SelfUpdater.cannotReplace(bundle: dir.appending(path: "retromac.app")) == nil)
+}
+@Test func swapScriptRelaunchesOldAppWhenMoveInFails() throws {
+    let script = SelfUpdater.swapScript(pid: 1, staged: URL(filePath: "/s/retromac.app"),
+                                        target: URL(filePath: "/a/retromac.app"), previous: URL(filePath: "/p/retromac.app"))
+    #expect(script.hasSuffix("then mv '/p/retromac.app' '/a/retromac.app'; fi\nopen '/a/retromac.app'\n"))
 }
