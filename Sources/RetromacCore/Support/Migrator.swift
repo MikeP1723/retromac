@@ -162,7 +162,7 @@ public struct Migrator: Sendable {
                 try ESDESettings.merge(existing: text, romDirectory: library).write(to: file, atomically: true, encoding: .utf8)
             }
             try create(paths.esdeFindRules.deletingLastPathComponent())
-            try ESDESystems.findRules(retroarch: paths.retroarchExecutable, cores: paths.retroarchCores)
+            try ESDESystems.findRules(paths: paths)
                 .write(to: paths.esdeFindRules, atomically: true, encoding: .utf8)
         }
 

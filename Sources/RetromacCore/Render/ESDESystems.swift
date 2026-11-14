@@ -17,12 +17,33 @@ public enum ESDESystems {
         // Never .bin/.iso: track files and bare images are reached through their .cue (see DiscSets).
         .psx: Info(fullname: "Sony PlayStation", extensions: ["cue", "chd", "m3u", "pbp"]),
         .saturn: Info(fullname: "Sega Saturn", extensions: ["cue", "chd", "m3u"]),
+        // What the importer files for these; .gcz is refused at import.
+        .gc: Info(fullname: "Nintendo GameCube", extensions: ["iso", "gcm", "rvz", "wia", "ciso"]),
+        .wii: Info(fullname: "Nintendo Wii", extensions: ["iso", "rvz", "wia", "wbfs", "ciso"]),
+        .xbox: Info(fullname: "Microsoft Xbox", extensions: ["iso", "xiso"]),
+    ]
+
+    /// Standalone emulators: ES-DE find-rule name, executable inside the app, launch command.
+    static let standalones: [String: (rule: String, executable: String, label: String, command: String)] = [
+        "dolphin": ("DOLPHIN", "Dolphin.app/Contents/MacOS/Dolphin", "Dolphin", "%EMULATOR_DOLPHIN% -b -e %ROM%"),
+        // Full screen comes from xemu.toml.
+        "xemu": ("XEMU", "xemu.app/Contents/MacOS/xemu", "xemu", "%EMULATOR_XEMU% -dvd_path %ROM%"),
     ]
 
     public static func xml(for systems: Set<SystemID>, manifest: Manifest) -> String {
         var out = "<?xml version=\"1.0\"?>\n<systemList>\n"
         for system in SystemID.allCases where systems.contains(system) {
-            guard let core = manifest.core(for: system), let info = info[system] else { continue }
+            guard let info = info[system] else { continue }
+            let label: String, command: String
+            if let core = manifest.core(for: system) {
+                label = core.libraryName
+                command = "%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/\(core.file) %ROM%"
+            } else if let app = manifest.app(for: system), let standalone = standalones[app.id] {
+                label = standalone.label
+                command = standalone.command
+            } else {
+                continue
+            }
             let exts = info.extensions.flatMap { [".\($0)", ".\($0.uppercased())"] }.joined(separator: " ")
             let name = system.rawValue
             out += """
@@ -31,7 +52,7 @@ public enum ESDESystems {
                     <fullname>\(info.fullname)</fullname>
                     <path>%ROMPATH%/\(name)</path>
                     <extension>\(exts)</extension>
-                    <command label="\(core.libraryName)">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/\(core.file) %ROM%</command>
+                    <command label="\(label)">\(command)</command>
                     <platform>\(name)</platform>
                     <theme>\(name)</theme>
                 </system>
@@ -41,25 +62,35 @@ public enum ESDESystems {
         return out + "</systemList>\n"
     }
 
-    /// ES-DE's own find rules expect RetroArch in /Applications; this points it at retromac's copy.
-    public static func findRules(retroarch: URL, cores: URL) -> String {
-        """
-        <?xml version="1.0"?>
-        <!-- Managed by retromac — edits will be overwritten -->
-        <ruleList>
-            <emulator name="RETROARCH">
-                <rule type="staticpath">
-                    <entry>\(ESDESettings.xmlEscape(retroarch.path))</entry>
-                </rule>
-            </emulator>
-            <core name="RETROARCH">
-                <rule type="corepath">
-                    <entry>\(ESDESettings.xmlEscape(cores.path))</entry>
-                </rule>
-            </core>
-        </ruleList>
+    /// ES-DE's own find rules expect emulators in /Applications; these point at retromac's copies.
+    public static func findRules(paths: Paths) -> String {
+        let emulators = [("RETROARCH", paths.retroarchExecutable)]
+            + standalones.values.sorted { $0.rule < $1.rule }.map { ($0.rule, paths.applications.appending(path: $0.executable)) }
+        var out = """
+            <?xml version="1.0"?>
+            <!-- Managed by retromac — edits will be overwritten -->
+            <ruleList>
 
-        """
+            """
+        for (name, executable) in emulators {
+            out += """
+                    <emulator name="\(name)">
+                        <rule type="staticpath">
+                            <entry>\(ESDESettings.xmlEscape(executable.path))</entry>
+                        </rule>
+                    </emulator>
+
+                """
+        }
+        return out + """
+                <core name="RETROARCH">
+                    <rule type="corepath">
+                        <entry>\(ESDESettings.xmlEscape(paths.retroarchCores.path))</entry>
+                    </rule>
+                </core>
+            </ruleList>
+
+            """
     }
 
     /// Replaces the user's same-named <system> entries with ours and keeps all others.

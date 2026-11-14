@@ -5,15 +5,33 @@ import Testing
 
 @Test func findRulesPointAtEncapsulatedRetroArch() throws {
     let paths = Paths(home: URL(filePath: "/tmp/my home"))
-    let xml = ESDESystems.findRules(retroarch: paths.retroarchExecutable, cores: paths.retroarchCores)
+    let xml = ESDESystems.findRules(paths: paths)
     #expect(xml.contains("<entry>/tmp/my home/Library/Application Support/retromac/Apps/RetroArch.app/Contents/MacOS/RetroArch</entry>"))
     #expect(xml.contains("<entry>/tmp/my home/Library/Application Support/RetroArch/cores</entry>"))
     let doc = try XMLDocument(xmlString: xml)
     #expect(doc.rootElement()?.name == "ruleList")
 }
 @Test func findRulesEscapeXML() {
-    let xml = ESDESystems.findRules(retroarch: URL(filePath: "/a&b/RetroArch"), cores: URL(filePath: "/c<d"))
-    #expect(xml.contains("/a&amp;b/RetroArch") && xml.contains("/c&lt;d"))
+    let xml = ESDESystems.findRules(paths: Paths(home: URL(filePath: "/a&b<c")))
+    #expect(xml.contains("/a&amp;b&lt;c/Library/Application Support/retromac/Apps/RetroArch.app") && !xml.contains("/a&b"))
+}
+@Test func findRulesPointAtRetromacApps() throws {
+    let xml = ESDESystems.findRules(paths: Paths(home: URL(filePath: "/tmp/my home")))
+    let apps = "/tmp/my home/Library/Application Support/retromac/Apps"
+    #expect(xml.contains("<emulator name=\"DOLPHIN\">") && xml.contains("<entry>\(apps)/Dolphin.app/Contents/MacOS/Dolphin</entry>"))
+    #expect(xml.contains("<emulator name=\"XEMU\">") && xml.contains("<entry>\(apps)/xemu.app/Contents/MacOS/xemu</entry>"))
+    _ = try XMLDocument(xmlString: xml)
+}
+@Test func gamecubeLaunchesDolphin() throws {
+    let xml = ESDESystems.xml(for: [.gc, .wii], manifest: try Manifest.bundled())
+    for needle in ["<name>gc</name>", "<name>wii</name>", "%EMULATOR_DOLPHIN% -b -e %ROM%", "label=\"Dolphin\"", ".rvz", ".wbfs"] {
+        #expect(xml.contains(needle), "missing \(needle)")
+    }
+    #expect(!xml.contains(".gcz"))
+}
+@Test func xboxLaunchesXemu() throws {
+    let xml = ESDESystems.xml(for: [.xbox], manifest: try Manifest.bundled())
+    #expect(xml.contains("<name>xbox</name>") && xml.contains("%EMULATOR_XEMU% -dvd_path %ROM%") && xml.contains(".xiso"))
 }
 @Test func rendererWritesFindRules() throws {
     let paths = Paths(home: URL(filePath: "/tmp/h"))
