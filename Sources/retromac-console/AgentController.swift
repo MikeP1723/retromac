@@ -3,7 +3,6 @@ import AppKit
 import GameController
 import QuartzCore
 import RetromacCore
-import Security
 
 /// Wires system events (controllers, wake, ES-DE quitting, messages from retromac.app) to
 /// ConsoleSession and carries out the actions it returns.
@@ -47,19 +46,10 @@ final class AgentController {
         Task { await perform(actions) }
     }
 
-    /// launchd restarts a crashed agent in the same login session; a marker per session tells the two apart.
+    /// launchd restarts a crashed agent in the same login session; that isn't a login.
     private func isFirstStartThisLogin() -> Bool {
-        var id = SecuritySessionId()
-        var attributes = SessionAttributeBits()
-        guard SessionGetInfo(SecuritySessionId(UInt32.max), &id, &attributes) == errSecSuccess else { return true }
-        let marker = paths.root.appending(path: "console-login-\(id)")
-        let fm = FileManager.default
-        if fm.fileExists(atPath: marker.path) { return false }
-        for old in (try? fm.contentsOfDirectory(atPath: paths.root.path)) ?? [] where old.hasPrefix("console-login-") {
-            try? fm.removeItem(at: paths.root.appending(path: old))
-        }
-        fm.createFile(atPath: marker.path, contents: nil)
-        return true
+        guard let session = ConsoleLogin.currentSessionID() else { return true }
+        return ConsoleLogin.claimFirstStart(root: paths.root, sessionID: session)
     }
 
     private func observeControllers() {
@@ -144,7 +134,8 @@ final class AgentController {
         }))
         observers.append((distributed, distributed.addObserver(forName: .init("petersoft.retromac.console.disabled"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                // Anyone in this login session can post this; act only if the saved profile agrees.
+                guard let self, (try? Profile.load(from: self.paths.profile))?.console?.enabled != true else { return }
                 _ = self.session.handle(.consoleDisabled)
                 self.standby.release()
                 exit(0)

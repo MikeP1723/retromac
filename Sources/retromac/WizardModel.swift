@@ -7,13 +7,14 @@ import RetromacCore
 @Observable @MainActor
 final class WizardModel {
     enum Step: Int, CaseIterable {
-        case display, systems, controllers, apply
+        case display, systems, controllers, console, apply
 
         var title: String {
             switch self {
             case .display: "Display"
             case .systems: "Systems"
             case .controllers: "Controllers"
+            case .console: "Console Mode"
             case .apply: "Install"
             }
         }
@@ -29,6 +30,7 @@ final class WizardModel {
     var loadError: String?
     /// Shown above the steps when retromac sends the user here to finish something.
     var notice: String?
+    let console = ConsoleModel()
 
     let paths = Paths(home: FileManager.default.homeDirectoryForCurrentUser)
     private let manifest: Manifest?
@@ -125,6 +127,7 @@ final class WizardModel {
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
             // Games filed before PS1/Saturn support (bare images, loose discs) become launchable.
             DiscSets.organizeLibrary(profile.libraryRoot)
+            try applyConsoleMode()
             log.append("Done.")
             applied = true
             notice = nil
@@ -132,6 +135,24 @@ final class WizardModel {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
             log.append("Error: \(error)")
+        }
+    }
+
+    /// Installs the login agent while Console Mode is on, and removes it when it's off.
+    private func applyConsoleMode() throws {
+        let app = Bundle.main.bundleURL
+        let agent = ConsoleAgent(paths: paths, appBundle: app, runner: ProcessRunner())
+        if profile.console?.enabled == true {
+            guard app.pathExtension == "app" else {
+                log.append("Note: Console Mode only works from retromac.app.")
+                return
+            }
+            try agent.install()
+            log.append("Console Mode is on.")
+        } else if agent.isInstalled {
+            DistributedNotificationCenter.default().postNotificationName(.init("petersoft.retromac.console.disabled"), object: nil, deliverImmediately: true)
+            try agent.uninstall()
+            log.append("Console Mode is off.")
         }
     }
 

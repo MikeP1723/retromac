@@ -61,3 +61,23 @@ private func rig() -> (Paths, URL) {
     try agent.uninstall()
     #expect(!agent.isInstalled)
 }
+
+@Test func firstStartIsClaimedOncePerLoginSession() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "login-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    #expect(ConsoleLogin.claimFirstStart(root: root, sessionID: 100))
+    #expect(!ConsoleLogin.claimFirstStart(root: root, sessionID: 100))
+    // A new login session is a login again, and clears the old session's marker.
+    #expect(ConsoleLogin.claimFirstStart(root: root, sessionID: 101))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("console-login-") } == ["console-login-101"])
+}
+@Test func installFromTheAppDoesNotCountAsLogin() throws {
+    let (paths, app) = rig()
+    try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true)
+    try Data(#"{"active":true}"#.utf8).write(to: paths.consoleSession)
+    try ConsoleAgent(paths: paths, appBundle: app, runner: LaunchctlRecorder(), uid: 501).install()
+    // The agent launchd starts now sees a mid-session start with no active session: it waits for Play.
+    let session = try #require(ConsoleLogin.currentSessionID())
+    #expect(!ConsoleLogin.claimFirstStart(root: paths.root, sessionID: session))
+    #expect(!ConsoleSession(settings: ConsoleSettings(enabled: true, sleep: .standby), stateFile: paths.consoleSession).active)
+}

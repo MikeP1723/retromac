@@ -89,6 +89,7 @@ struct WizardView: View {
                 case .display: DisplayStep(model: model)
                 case .systems: SystemsStep(model: model)
                 case .controllers: ControllersStep(model: model)
+                case .console: ConsoleStep(model: model, console: model.console)
                 case .apply: ApplyStep(model: model)
                 }
             }
