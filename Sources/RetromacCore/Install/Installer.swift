@@ -37,6 +37,10 @@ public struct InstallState: Codable, Equatable, Sendable {
     /// One rollback generation, written by the updater.
     public var previousApps: [String: App]?
     public var previousCores: [String: Core]?
+    /// 2 once everything lives under Application Support (see Migrator); nil for earlier installs.
+    public var layoutVersion: Int?
+
+    public static let empty = InstallState(manifestVersion: 0, apps: [:], cores: [:])
 
     public static func load(from url: URL) throws -> InstallState {
         guard FileManager.default.fileExists(atPath: url.path) else {
