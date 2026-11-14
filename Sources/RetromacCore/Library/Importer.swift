@@ -42,14 +42,21 @@ struct FileCopy: Equatable, Sendable {
     var move: Bool
 }
 
-/// Owns the temp files from one analyze → commit round; removed when released.
-public final class ImportSession: Sendable {
+/// Owns the temp files from analyze → commit; removed when released. Reusing a session across
+/// analyses (more files dropped before Add) keeps archives from being unpacked again.
+public final class ImportSession: @unchecked Sendable {
     let dir: URL
+    private let lock = NSLock()
+    /// Archive path + size + modification date → the folder it was unpacked into.
+    private var unpacked: [String: URL] = [:]
 
     init() throws {
         dir = FileManager.default.temporaryDirectory.appending(path: "retromac-import-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
+
+    func unpacked(_ key: String) -> URL? { lock.withLock { unpacked[key] } }
+    func remember(_ key: String, _ folder: URL) { lock.withLock { unpacked[key] = folder } }
 
     deinit {
         try? FileManager.default.removeItem(at: dir)
@@ -70,18 +77,26 @@ public struct Importer: Sendable {
     let libraryRoot: URL
     let dats: DatStore
     let runner: any CommandRunner
+    /// Bytes free on the volume holding a folder.
+    let freeSpace: @Sendable (URL) -> Int64?
 
-    public init(libraryRoot: URL, dats: DatStore, runner: any CommandRunner) {
+    public init(libraryRoot: URL, dats: DatStore, runner: any CommandRunner,
+                freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity) {
         self.libraryRoot = libraryRoot
         self.dats = dats
         self.runner = runner
+        self.freeSpace = freeSpace
+    }
+
+    public static let availableCapacity: @Sendable (URL) -> Int64? = { url in
+        (try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
     }
 
     public var unidentifiedDir: URL { libraryRoot.appending(path: "_Unidentified") }
 
     /// Works out what each dropped item would become; writes nothing under the library.
-    public func analyze(_ urls: [URL]) throws -> (ImportSession, [ImportCandidate]) {
-        let session = try ImportSession()
+    public func analyze(_ urls: [URL], reusing existing: ImportSession? = nil) throws -> (ImportSession, [ImportCandidate]) {
+        let session = try existing ?? ImportSession()
         var state = Analysis(session: session, index: dats.load())
         var loose: [(URL, String)] = []
         for url in urls {
@@ -191,7 +206,8 @@ public struct Importer: Sendable {
             guard columns.count > 8, let size = Int(columns[4]) else { return nil }
             return (size, columns.dropFirst(8).joined(separator: " "))
         }
-        if members.reduce(0, { $0 + $1.size }) > Self.maxArchiveBytes {
+        let total = members.reduce(0) { $0 + $1.size }
+        if total > Self.maxArchiveBytes {
             state.candidates.append(candidate(source, .unidentified(reason: "archive too large to unpack")))
             return
         }
@@ -201,13 +217,26 @@ public struct Importer: Sendable {
             state.candidates.append(candidate(source, .unidentified(reason: Self.tooLarge)))
             return
         }
-        let out = state.session.dir.appending(path: UUID().uuidString)
-        do {
-            try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-            try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", out.path])
-        } catch {
-            state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
-            return
+        let attributes = try? FileManager.default.attributesOfItem(atPath: archive.path)
+        let cacheKey = "\(archive.standardizedFileURL.path)|\(attributes?[.size] ?? 0)|\(attributes?[.modificationDate] ?? "")"
+        let out: URL
+        if let known = state.session.unpacked(cacheKey) {
+            out = known
+        } else {
+            // Unpacking needs the space now and again when the files are filed; leave a margin.
+            if let free = freeSpace(state.session.dir), Int64(total) + (512 << 20) > free {
+                state.candidates.append(candidate(source, .unidentified(reason: "not enough free disk space to unpack")))
+                return
+            }
+            out = state.session.dir.appending(path: UUID().uuidString)
+            do {
+                try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+                try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", out.path])
+            } catch {
+                state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
+                return
+            }
+            state.session.remember(cacheKey, out)
         }
         handleGroup(walk(out).map { ($0.0, "\(source) › \($0.1)") }, depth: depth + 1, &state)
     }

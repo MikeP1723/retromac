@@ -195,3 +195,38 @@ extension ImportRig {
     let done = try rig.importer.commit(s2, c2)
     #expect(done[0].destination?.lastPathComponent == "Alpha (2).iso")
 }
+final class CountingRunner: CommandRunner, @unchecked Sendable {
+    private let lock = NSLock()
+    private var extractions = 0
+    var extracted: Int { lock.withLock { extractions } }
+    func run(_ executable: String, _ args: [String], input: String?) throws -> String {
+        if args.first == "-xf" { lock.withLock { extractions += 1 } }
+        return try ProcessRunner().run(executable, args, input: input)
+    }
+}
+
+@Test func reusedSessionDoesNotReextract() throws {
+    let rig = try ImportRig()
+    let staging = rig.dir.appending(path: "zipsrc")
+    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    try nesROM().write(to: staging.appending(path: "one.nes"))
+    let zip = rig.drops.appending(path: "pack.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "one.nes"])
+    let runner = CountingRunner()
+    let importer = Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: runner)
+    let (session, _) = try importer.analyze([zip])
+    let (again, candidates) = try importer.analyze([zip, try rig.drop("two.nes", nesROM(prg: Data(repeating: 2, count: 16384)))], reusing: session)
+    #expect(again === session)
+    #expect(runner.extracted == 1)
+    #expect(candidates.map(\.status) == [.unverified(.nes), .unverified(.nes)])
+}
+@Test func archiveLargerThanFreeSpaceIsNotUnpacked() throws {
+    let rig = try ImportRig()
+    let staging = rig.dir.appending(path: "zipsrc")
+    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    try nesROM().write(to: staging.appending(path: "one.nes"))
+    let zip = rig.drops.appending(path: "pack.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "one.nes"])
+    let importer = Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: ProcessRunner(), freeSpace: { _ in 1024 })
+    #expect(try importer.analyze([zip]).1.map(\.status) == [.unidentified(reason: "not enough free disk space to unpack")])
+}

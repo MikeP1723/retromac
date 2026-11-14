@@ -179,7 +179,7 @@ For each file:
    - Wii U, Xbox, and Switch files are left in their formats.
 6. **BIOS:** match against the known-BIOS hash table for Saturn, PS1, PS2, and Xbox (MCPX, flash), and copy each file to its emulator's directory. The app shows status per system.
 7. **File** to `Library/<system>/<Canonical Name>.<ext>`, then rescan ES-DE.
-8. **No match:** move to `_Unidentified/` with a reason sidecar. Encrypted Wii U disc images and anything that would need keys land here.
+8. **No match:** move to `_Unidentified/` with a reason sidecar. Per decision 7, Wii U `.wud`/`.wux` images are filed under Wii U by their container rather than set aside. Nothing that needs keys is ever read.
 
 Files are copied, the hash is verified, and only then is the original removed. A SQLite journal lets a crashed ingest resume. Converting a 4 GB disc image to CHD or RVZ takes minutes, so conversions run through a bounded queue and show progress in the app.
 

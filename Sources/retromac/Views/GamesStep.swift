@@ -46,7 +46,7 @@ struct GamesStep: View {
                     .overlay(Text("Drop games, folders or .zip files here").foregroundStyle(.secondary))
                     .frame(height: 140)
                     .dropDestination(for: URL.self) { urls, _ in
-                        guard !games.committing else { return false }
+                        guard !games.committing, !games.updatingDats else { return false }
                         Task { await games.analyze(urls) }
                         return true
                     } isTargeted: { targeted = $0 }
@@ -61,10 +61,9 @@ struct GamesStep: View {
             }
 
             HStack {
-                if games.busy {
-                    ProgressView().controlSize(.small)
-                    if games.datProgress == nil { Button("Cancel") { games.cancel() } }
-                }
+                if games.busy { ProgressView().controlSize(.small) }
+                if games.analyzing { Button("Cancel") { games.cancel() } }
+                if games.committing { Text("Adding games…").foregroundStyle(.secondary) }
                 if let message = games.message { Text(message).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Clear") { games.clear() }.disabled(games.candidates.isEmpty || games.busy)

@@ -12,9 +12,11 @@ final class GamesModel {
     let installable: Set<SystemID> = Set((try? Manifest.bundled())?.installableSystems ?? [])
     private var analysis: Task<Void, Never>?
     var candidates: [ImportCandidate] = []
-    var busy = false
-    /// Drops are refused while a commit is copying files.
+    /// What's running; each is shown and cancelled separately, and only one copy can run at a time.
+    var analyzing = false
     var committing = false
+    var updatingDats = false
+    var busy: Bool { analyzing || committing || updatingDats }
     var message: String?
 
     private let paths: Paths
@@ -57,7 +59,9 @@ final class GamesModel {
     }
 
     func analyze(_ urls: [URL]) async {
+        guard !committing, !updatingDats else { return }
         dropped += urls
+        analysis?.cancel()
         let task = Task { await reanalyze() }
         analysis = task
         await task.value
@@ -65,18 +69,22 @@ final class GamesModel {
 
     /// Stops a running analysis; the dropped items are forgotten.
     func cancel() {
+        guard analyzing else { return }
         analysis?.cancel()
         generation += 1
         dropped = []
-        busy = false
+        candidates = []
+        session = nil
+        analyzing = false
         message = "Cancelled."
     }
 
     func updated(_ system: SystemID) -> Date? { DatStore(paths: paths).updated(system) }
 
     func updateDats() async {
-        busy = true
-        defer { busy = false; datProgress = nil }
+        guard !busy else { return }
+        updatingDats = true
+        defer { updatingDats = false; datProgress = nil }
         let results = await DatUpdater.update(store: DatStore(paths: paths), downloader: URLSessionDownloader(),
                                               runner: ProcessRunner()) { done, total in
             Task { @MainActor in self.datProgress = "Downloading \(done + 1) of \(total)…" }
@@ -89,14 +97,16 @@ final class GamesModel {
     private func reanalyze() async {
         generation += 1
         let mine = generation
-        busy = true
+        analyzing = true
         message = nil
         let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner())
         let urls = dropped
-        let worker = Task.detached { Result { try importer.analyze(urls) } }
+        // Reusing the session keeps already-unpacked archives instead of unpacking them again.
+        let previous = session
+        let worker = Task.detached { Result { try importer.analyze(urls, reusing: previous) } }
         let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
         guard mine == generation else { return }
-        busy = false
+        analyzing = false
         switch result {
         case .success(let (session, candidates)):
             self.session = session
@@ -108,9 +118,8 @@ final class GamesModel {
 
     func commit() async {
         guard let session, !busy else { return }
-        busy = true
         committing = true
-        defer { busy = false; committing = false }
+        defer { committing = false }
         let committed = dropped
         let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner())
         let pending = candidates
