@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import AppKit
+import GameController
+import QuartzCore
+import RetromacCore
+import Security
+
+/// Wires system events (controllers, wake, ES-DE quitting, messages from retromac.app) to
+/// ConsoleSession and carries out the actions it returns.
+@MainActor
+final class AgentController {
+    private let paths: Paths
+    private var session: ConsoleSession!
+    private var combos = ComboDetector()
+    private let standby = StandbyAssertion()
+    private let retroarch = RetroArchCommands(transport: UDPTransport())
+    private var padIDs: [ObjectIdentifier: Int] = [:]
+    private var quittingESDE = false
+    private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+    private var timer: Timer?
+
+    init() {
+        var home = FileManager.default.homeDirectoryForCurrentUser
+        #if DEBUG
+        // Lets a debug build run against a scratch install.
+        if let override = ProcessInfo.processInfo.environment["RETROMAC_HOME"] { home = URL(filePath: override) }
+        #endif
+        paths = Paths(home: home)
+    }
+
+    func start() {
+        guard let settings = (try? Profile.load(from: paths.profile))?.console, settings.enabled else {
+            // A clean exit, so launchd (KeepAlive: SuccessfulExit false) doesn't restart us.
+            exit(0)
+        }
+        session = ConsoleSession(settings: settings, stateFile: paths.consoleSession)
+        observeControllers()
+        observeSystem()
+        handle(.agentStarted(atLogin: isFirstStartThisLogin()))
+    }
+
+    // MARK: Events
+
+    private func handle(_ event: ConsoleEvent) {
+        let actions = session.handle(event)
+        guard !actions.isEmpty else { return }
+        Task { await perform(actions) }
+    }
+
+    /// launchd restarts a crashed agent in the same login session; a marker per session tells the two apart.
+    private func isFirstStartThisLogin() -> Bool {
+        var id = SecuritySessionId()
+        var attributes = SessionAttributeBits()
+        guard SessionGetInfo(SecuritySessionId(UInt32.max), &id, &attributes) == errSecSuccess else { return true }
+        let marker = paths.root.appending(path: "console-login-\(id)")
+        let fm = FileManager.default
+        if fm.fileExists(atPath: marker.path) { return false }
+        for old in (try? fm.contentsOfDirectory(atPath: paths.root.path)) ?? [] where old.hasPrefix("console-login-") {
+            try? fm.removeItem(at: paths.root.appending(path: old))
+        }
+        fm.createFile(atPath: marker.path, contents: nil)
+        return true
+    }
+
+    private func observeControllers() {
+        GCController.shouldMonitorBackgroundEvents = true
+        let center = NotificationCenter.default
+        for name in [Notification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
+            observers.append((center, center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.syncControllers() }
+            }))
+        }
+        syncControllers()
+        // Value-change events stop while buttons are held still; poll so a hold fires at 2 s.
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollPads() }
+        }
+    }
+
+    /// Attaches new controllers and forgets (resetting any half-held combo) ones that went away.
+    private func syncControllers() {
+        let connected = GCController.controllers()
+        let live = Set(connected.map(ObjectIdentifier.init))
+        for (key, pad) in padIDs where !live.contains(key) {
+            padIDs[key] = nil
+            combos.disconnected(pad: pad)
+        }
+        connected.forEach(attach)
+    }
+
+    private func attach(_ controller: GCController) {
+        guard let gamepad = controller.extendedGamepad, padIDs[ObjectIdentifier(controller)] == nil else { return }
+        padIDs[ObjectIdentifier(controller)] = (padIDs.values.max() ?? -1) + 1
+        gamepad.valueChangedHandler = { [weak self] gamepad, element in
+            let pressed = (element as? GCControllerButtonInput)?.isPressed == true
+            MainActor.assumeIsolated {
+                guard let self, let controller = gamepad.controller else { return }
+                if pressed && CGDisplayIsAsleep(CGMainDisplayID()) != 0 {
+                    self.handle(.controllerActivity(displayAsleep: true))
+                }
+                self.feed(controller)
+            }
+        }
+    }
+
+    private func pollPads() {
+        GCController.controllers().forEach(feed)
+    }
+
+    private func feed(_ controller: GCController) {
+        guard let pad = padIDs[ObjectIdentifier(controller)], let gamepad = controller.extendedGamepad else { return }
+        var buttons: PadButtons = []
+        if gamepad.leftShoulder.isPressed { buttons.insert(.l1) }
+        if gamepad.rightShoulder.isPressed { buttons.insert(.r1) }
+        if gamepad.buttonMenu.isPressed { buttons.insert(.start) }
+        if gamepad.buttonOptions?.isPressed == true { buttons.insert(.select) }
+        if gamepad.buttonHome?.isPressed == true { buttons.insert(.home) }
+        if let combo = combos.update(pad: pad, buttons: buttons, at: CACurrentMediaTime()) {
+            handle(.combo(combo))
+        }
+    }
+
+    private func observeSystem() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            observers.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.handle(.wake) }
+            }))
+        }
+        observers.append((workspace, workspace.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleURL?.lastPathComponent == "ES-DE.app" else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let byAgent = self.quittingESDE
+                self.quittingESDE = false
+                self.handle(.esdeTerminated(byAgent: byAgent))
+            }
+        }))
+
+        let distributed = DistributedNotificationCenter.default()
+        observers.append((distributed, distributed.addObserver(forName: .init("petersoft.retromac.console.play"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handle(.play) }
+        }))
+        observers.append((distributed, distributed.addObserver(forName: .init("petersoft.retromac.console.disabled"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                _ = self.session.handle(.consoleDisabled)
+                self.standby.release()
+                exit(0)
+            }
+        }))
+    }
+
+    // MARK: Actions
+
+    private func perform(_ actions: [ConsoleAction]) async {
+        for action in actions {
+            switch action {
+            case .launchESDE: launchESDE()
+            case .bringESDEToFront: running("ES-DE.app")?.activate()
+            case .holdStandbyAssertion: standby.hold()
+            case .releaseStandbyAssertion: standby.release()
+            case .pauseGame: await retroarch.pauseIfPlaying()
+            case .sleepDisplay: Power.sleepDisplay()
+            case .sleepSystem: Power.sleepSystem()
+            case .declareUserActivity: Power.declareUserActivity()
+            case .quitRetroArch(let grace):
+                guard running("RetroArch.app") != nil else { continue }
+                await retroarch.quit()
+                await forceQuit("RetroArch.app", after: grace)
+            case .quitESDE(let grace):
+                guard let esde = running("ES-DE.app") else { continue }
+                quittingESDE = true
+                esde.terminate()
+                await forceQuit("ES-DE.app", after: grace)
+            case .openHome: openHome()
+            }
+        }
+    }
+
+    private func running(_ appName: String) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { $0.bundleURL?.lastPathComponent == appName }
+    }
+
+    private func forceQuit(_ appName: String, after grace: Int) async {
+        for _ in 0..<(grace * 10) {
+            guard running(appName) != nil else { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        running(appName)?.forceTerminate()
+    }
+
+    private func launchESDE() {
+        guard running("ES-DE.app") == nil else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ESDELauncher.arguments(paths: paths)
+        NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration)
+    }
+
+    /// retromac.app is three levels up from Contents/MacOS/retromac-console.
+    private func openHome() {
+        var app = URL(filePath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        for _ in 0..<3 { app.deleteLastPathComponent() }
+        guard app.pathExtension == "app" else { return }
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+}

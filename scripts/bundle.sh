@@ -5,12 +5,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 swift build -c release --arch arm64 --product retromac
-bin="$(swift build -c release --arch arm64 --show-bin-path)/retromac"
+swift build -c release --arch arm64 --product retromac-console
+bindir="$(swift build -c release --arch arm64 --show-bin-path)"
 
 app=build/retromac.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$bin" "$app/Contents/MacOS/retromac"
+cp "$bindir/retromac" "$app/Contents/MacOS/retromac"
+cp "$bindir/retromac-console" "$app/Contents/MacOS/retromac-console"
 cp Support/Info.plist "$app/Contents/Info.plist"
 if [[ -n "${RETROMAC_VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $RETROMAC_VERSION" "$app/Contents/Info.plist"

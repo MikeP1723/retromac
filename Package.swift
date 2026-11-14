@@ -9,11 +9,13 @@ let package = Package(
         .library(name: "RetromacCore", targets: ["RetromacCore"]),
         .executable(name: "retromac", targets: ["retromac"]),
         .executable(name: "retromac-tool", targets: ["retromac-tool"]),
+        .executable(name: "retromac-console", targets: ["retromac-console"]),
     ],
     targets: [
         .target(name: "RetromacCore", resources: [.process("Resources")]),
         .executableTarget(name: "retromac", dependencies: ["RetromacCore"]),
         .executableTarget(name: "retromac-tool", dependencies: ["RetromacCore"]),
+        .executableTarget(name: "retromac-console", dependencies: ["RetromacCore"]),
         .testTarget(name: "RetromacCoreTests", dependencies: ["RetromacCore"]),
     ]
 )

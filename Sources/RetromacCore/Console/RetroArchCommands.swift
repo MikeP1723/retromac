@@ -77,7 +77,7 @@ public enum PlaybackState: Equatable, Sendable {
     }
 }
 
-public struct RetroArchCommands {
+public struct RetroArchCommands: Sendable {
     let transport: any DatagramTransport
 
     public init(transport: any DatagramTransport) {
