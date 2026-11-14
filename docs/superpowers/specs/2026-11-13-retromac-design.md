@@ -279,6 +279,14 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
      - Disc systems by serial or game ID read from a few header sectors, never a full-image hash.
      - Wii U and Switch by their container headers, named from the filename (their metadata is encrypted).
    - **Games not in a database** (hacks, translations, homebrew) get a clean name from the filename, with GoodTools tags translated, e.g. "(U)" becomes "(USA)" and "[h2]" becomes "[Hack]".
+8. **Fully encapsulated, for non-technical users** (Mike, 2026-11-13). This replaces `~/retromac` and the `/Applications` installs.
+   - **One visible app.** retromac's data, the game library, RetroArch and ES-DE all live under `~/Library/Application Support/retromac`. Nothing else appears in the home folder or `/Applications`.
+   - **Games are managed in the app:** drag and drop, plus a **Show Games in Finder** button and a storage readout.
+   - **After first setup, retromac opens to a home screen:** **Play** (launches ES-DE full screen), **Add Games**, **Settings** (the setup steps again) and **Check for Updates**.
+   - **ES-DE system commands use the absolute RetroArch path,** since ES-DE's default find rules expect `/Applications`.
+   - **Existing installs are migrated once.**
+   - **Licensing is unchanged:** emulators are still downloaded from upstream at runtime and never bundled.
+   - **Scheduling:** planned as its own phase, right after 3a-2 merges.
 
 ## Findings from Phase 1 verification
 
