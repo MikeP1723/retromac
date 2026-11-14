@@ -24,6 +24,9 @@ public struct Paths: Sendable {
     public var previous: URL { root.appending(path: "previous") }
     /// Imported No-Intro/Redump DAT indexes, one JSON file per system.
     public var dats: URL { root.appending(path: "dats") }
+    /// Whether a console session is running, so a restarted agent knows not to relaunch ES-DE.
+    public var consoleSession: URL { root.appending(path: "console-session.json") }
+    public var consoleAgentPlist: URL { home.appending(path: "Library/LaunchAgents/petersoft.retromac.console.plist") }
     /// The manifest the current install was last updated to.
     public var appliedManifest: URL { root.appending(path: "manifest.json") }
 
