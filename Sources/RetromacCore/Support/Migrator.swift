@@ -18,13 +18,13 @@ public enum MigrationError: Error, Equatable {
 
 /// Moves a Phase 1–3 install (~/retromac, ~/ES-DE, managed apps in /Applications) under Application
 /// Support. Only renames, only what retromac created, and safe to run again after an interruption.
-public struct Migrator {
+public struct Migrator: Sendable {
     static let layoutVersion = 2
 
     let paths: Paths
     let legacy: LegacyPaths
     let isRunning: @Sendable (String) -> Bool
-    let fm = FileManager.default
+    var fm: FileManager { .default }
 
     public init(paths: Paths, legacy: LegacyPaths, isRunning: @escaping @Sendable (String) -> Bool) {
         self.paths = paths

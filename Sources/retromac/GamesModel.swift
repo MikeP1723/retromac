@@ -18,6 +18,12 @@ final class GamesModel {
     var updatingDats = false
     var busy: Bool { analyzing || committing || updatingDats }
     var message: String?
+    /// Files scanned so far and the total, while scanning.
+    var scanProgress: (scanned: Int, total: Int)?
+    /// Games per system already in the library, from the home/library screens' scan.
+    var librarySystems: [SystemID: Int] = [:]
+
+    var summary: ImportSummary? { candidates.isEmpty ? nil : Importer.summarize(candidates) }
 
     private let paths: Paths
     private let libraryRoot: () -> URL
@@ -103,7 +109,15 @@ final class GamesModel {
         let urls = dropped
         // Reusing the session keeps already-unpacked archives instead of unpacking them again.
         let previous = session
-        let worker = Task.detached { Result { try importer.analyze(urls, reusing: previous) } }
+        scanProgress = (0, 0)
+        defer { if mine == generation { scanProgress = nil } }
+        let worker = Task.detached {
+            Result {
+                try importer.analyze(urls, reusing: previous) { scanned, total in
+                    Task { @MainActor in if mine == self.generation { self.scanProgress = (scanned, total) } }
+                }
+            }
+        }
         let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
         guard mine == generation else { return }
         analyzing = false
@@ -130,7 +144,10 @@ final class GamesModel {
             // Only what this commit covered; anything dropped meanwhile stays queued.
             dropped.removeFirst(min(committed.count, dropped.count))
             self.session = nil
-            message = "Added \(count) game\(count == 1 ? "" : "s"). They appear in ES-DE the next time it starts."
+            message = "Imported \(count.formatted()) game\(count == 1 ? "" : "s"). Click Play to start."
+        } catch ImportError.notEnoughSpace(let needed, let free) {
+            let format = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
+            message = "Not enough space: needs \(format(needed)), \(format(free)) free. Nothing was copied."
         } catch {
             message = "Couldn't add games: \(error.localizedDescription)"
         }

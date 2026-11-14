@@ -7,16 +7,14 @@ import RetromacCore
 @Observable @MainActor
 final class WizardModel {
     enum Step: Int, CaseIterable {
-        case display, systems, controllers, library, apply, games
+        case display, systems, controllers, apply
 
         var title: String {
             switch self {
             case .display: "Display"
             case .systems: "Systems"
             case .controllers: "Controllers"
-            case .library: "Library"
             case .apply: "Install"
-            case .games: "Games"
             }
         }
     }
@@ -42,6 +40,20 @@ final class WizardModel {
         rules = Self.load("display rules", into: &errors) { try DisplayRules.bundled() }
         loadError = errors.isEmpty ? nil : errors.joined(separator: "\n")
 
+        profile = Self.loadProfile(paths)
+        backups = (try? BackupStore(root: paths.backups, home: paths.home).list()) ?? []
+
+        for name in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.profile.controllers = ControllerDetector.detect() }
+            })
+        }
+    }
+
+    /// The saved profile with the screen and controllers re-detected, or a new one. The library always
+    /// lives under retromac's own folder.
+    static func loadProfile(_ paths: Paths) -> Profile {
+        var profile: Profile
         if var saved = try? Profile.load(from: paths.profile) {
             // Re-detect the screen, keeping the size and distance only the user knows.
             saved.display = DisplayDetector.detect(diagonalInches: saved.display.diagonalInches,
@@ -51,14 +63,22 @@ final class WizardModel {
             profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.installableSystems ?? []),
                               controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
         }
+        profile.libraryRoot = paths.defaultLibraryRoot
         profile.controllers = ControllerDetector.detect()
-        backups = (try? BackupStore(root: paths.backups, home: paths.home).list()) ?? []
+        return profile
+    }
 
-        for name in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.profile.controllers = ControllerDetector.detect() }
-            })
-        }
+    /// After a migration moved the profile into place.
+    func reloadProfile() {
+        profile = Self.loadProfile(paths)
+        backups = (try? BackupStore(root: paths.backups, home: paths.home).list()) ?? []
+    }
+
+    /// Re-renders and applies configs without installing anything (after a migration).
+    func applyConfigs() throws {
+        guard let manifest, let rules else { return }
+        let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
+        _ = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
     }
 
     private static func load<T>(_ what: String, into errors: inout [String], _ body: () throws -> T) -> T? {
@@ -105,7 +125,9 @@ final class WizardModel {
     }
 
     func openESDE() {
-        NSWorkspace.shared.open(paths.applications.appending(path: "ES-DE.app"))
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ESDELauncher.arguments(paths: paths)
+        NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration)
     }
 
     func restore(_ snapshot: URL) {
