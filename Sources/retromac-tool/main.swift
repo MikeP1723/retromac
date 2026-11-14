@@ -121,7 +121,7 @@ func option(_ name: String, in args: [String]) -> String? {
 
 func paths(_ args: [String]) -> Paths {
     let home = option("--home", in: args).map { URL(filePath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser
-    let apps = option("--applications", in: args).map { URL(filePath: $0) } ?? URL(filePath: "/Applications")
+    let apps = option("--applications", in: args).map { URL(filePath: $0) }
     return Paths(home: home, applications: apps)
 }
 
