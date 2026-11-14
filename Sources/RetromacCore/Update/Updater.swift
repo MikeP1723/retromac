@@ -22,6 +22,8 @@ public struct RealFileOps: FileOps {
 public struct UpdateReport: Equatable, Sendable {
     public var updated: [String] = []
     public var skipped: [String] = []
+    /// "<id>: <reason>" for components whose swap failed; they stay on their current version.
+    public var failed: [String] = []
     public var config: ApplyReport?
 }
 
@@ -91,26 +93,47 @@ public struct Updater: Sendable {
             }
         }
 
+        // The download can take minutes; an emulator launched meanwhile must not have files swapped under it.
+        if let running = apps.first(where: isRunning) { throw UpdateError.appRunning(running) }
+
         for s in staged {
             let previous = paths.previous.appending(path: s.name)
-            try fileOps.removeIfExists(previous)
+            // Park the current copy until the new one is in place, so a failed swap never costs
+            // the existing rollback generation.
+            let parked = paths.previous.appending(path: "\(s.name).parked-\(UUID().uuidString)")
             let hadCurrent = fm.fileExists(atPath: s.target.path)
-            if hadCurrent { try fileOps.move(s.target, to: previous) }
             do {
-                try fileOps.move(s.staged, to: s.target)
+                if hadCurrent { try fileOps.move(s.target, to: parked) }
+                do {
+                    try fileOps.move(s.staged, to: s.target)
+                } catch {
+                    if hadCurrent {
+                        do { try fileOps.move(parked, to: s.target) } catch {
+                            throw CocoaError(.fileWriteUnknown, userInfo: [
+                                NSLocalizedDescriptionKey: "couldn't restore \(s.name); the old copy is at \(parked.path)"])
+                        }
+                    }
+                    throw error
+                }
             } catch {
-                if hadCurrent { try? fileOps.move(previous, to: s.target) }
-                throw error
+                report.failed.append("\(s.id): \(error.localizedDescription)")
+                continue
+            }
+
+            var keptPrevious = false
+            if hadCurrent {
+                try? fileOps.removeIfExists(previous)
+                keptPrevious = (try? fileOps.move(parked, to: previous)) != nil
             }
             if let app = s.app {
                 var previousApps = state.previousApps ?? [:]
-                previousApps[s.id] = state.apps[s.id]
+                previousApps[s.id] = keptPrevious ? state.apps[s.id] : nil
                 state.previousApps = previousApps
                 state.apps[s.id] = app
             }
             if let core = s.core {
                 var previousCores = state.previousCores ?? [:]
-                previousCores[s.id] = state.cores[s.id]
+                previousCores[s.id] = keptPrevious ? state.cores[s.id] : nil
                 state.previousCores = previousCores
                 state.cores[s.id] = core
             }
@@ -118,16 +141,21 @@ public struct Updater: Sendable {
             report.updated.append(s.id)
         }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try fm.createDirectory(at: paths.appliedManifest.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try encoder.encode(latest).write(to: paths.appliedManifest, options: .atomic)
+        guard !report.updated.isEmpty else { return report }
         report.config = try applier.apply(ProfileRenderer.render(profile, manifest: latest, rules: rules, paths: paths))
+        // Only a fully applied update moves the baseline the planner compares licenses against.
+        if report.failed.isEmpty {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try fm.createDirectory(at: paths.appliedManifest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoder.encode(latest).write(to: paths.appliedManifest, options: .atomic)
+        }
         return report
     }
 
     /// Swaps a component back with its copy in `paths.previous`.
     public func rollback(_ id: String) throws {
+        if let running = apps.first(where: isRunning) { throw UpdateError.appRunning(running) }
         var state = try InstallState.load(from: paths.state)
         let name: String, target: URL
         if state.previousApps?[id] != nil, let appName = appName(for: id) {
@@ -139,17 +167,26 @@ public struct Updater: Sendable {
         } else {
             throw UpdateError.nothingToRollBack(id)
         }
+        let fm = FileManager.default
         let previous = paths.previous.appending(path: name)
+        guard fm.fileExists(atPath: previous.path) else { throw UpdateError.nothingToRollBack(id) }
+
         let parked = paths.previous.appending(path: "\(name).rollback-\(UUID().uuidString)")
-        try fileOps.move(target, to: parked)
-        try fileOps.move(previous, to: target)
-        try fileOps.move(parked, to: previous)
+        let hadCurrent = fm.fileExists(atPath: target.path)
+        if hadCurrent { try fileOps.move(target, to: parked) }
+        do {
+            try fileOps.move(previous, to: target)
+        } catch {
+            if hadCurrent { try? fileOps.move(parked, to: target) }
+            throw error
+        }
+        let keptCurrent = hadCurrent && (try? fileOps.move(parked, to: previous)) != nil
 
         if let old = state.previousApps?[id] {
-            state.previousApps?[id] = state.apps[id]
+            state.previousApps?[id] = keptCurrent ? state.apps[id] : nil
             state.apps[id] = old
         } else if let old = state.previousCores?[id] {
-            state.previousCores?[id] = state.cores[id]
+            state.previousCores?[id] = keptCurrent ? state.cores[id] : nil
             state.cores[id] = old
         }
         try state.save(to: paths.state)

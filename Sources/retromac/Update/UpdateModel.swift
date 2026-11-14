@@ -106,8 +106,9 @@ final class UpdateModel {
             let report = try await updater(for: latest).apply(chosen, adopt: adopt, latest: latest, profile: profile(), rules: rules)
             report.updated.forEach { log.append("Updated \($0)") }
             report.skipped.forEach { log.append("Skipped \($0)") }
-            log.append("Done.")
-        } catch UpdateError.appRunning(let app) {
+            report.failed.forEach { log.append("Failed \($0)") }
+            log.append(report.failed.isEmpty ? "Done." : "Finished with errors; failed components are unchanged.")
+        } catch UpdateError.appRunning(let app), ApplyError.appRunning(let app) {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
             log.append("Update failed: \(error)")
@@ -148,6 +149,8 @@ final class UpdateModel {
         do {
             try updater(for: manifest).rollback(id)
             log.append("Reverted \(id).")
+        } catch UpdateError.appRunning(let app) {
+            log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
             log.append("Revert failed: \(error)")
         }
