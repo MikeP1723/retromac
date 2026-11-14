@@ -28,12 +28,14 @@ public enum DatUpdater {
     }
 
     /// Each system is fetched and imported on its own: a failure leaves that system's previous index.
-    public static func update(store: DatStore, downloader: any Downloader,
-                              runner: any CommandRunner) async -> [(SystemID, Result<DatFile, Error>)] {
+    public static func update(store: DatStore, downloader: any Downloader, runner: any CommandRunner,
+                              progress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil) async -> [(SystemID, Result<DatFile, Error>)] {
         let tmp = FileManager.default.temporaryDirectory.appending(path: "retromac-datupdate-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         var results: [(SystemID, Result<DatFile, Error>)] = []
-        for system in SystemID.allCases {
+        let systems = SystemID.allCases.filter { sources[$0] != nil }
+        for (index, system) in systems.enumerated() {
+            progress?(index, systems.count)
             guard let url = url(for: system) else { continue }
             do {
                 try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

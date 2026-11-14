@@ -112,6 +112,7 @@ public struct Importer: Sendable {
         let cues = files.filter { $0.0.pathExtension.lowercased() == "cue" }
         let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path } })
         for (file, source) in files where !claimed.contains(file.standardizedFileURL.path) {
+            if Task.isCancelled { return }
             handle(file, source: source, depth: depth, &state)
         }
     }

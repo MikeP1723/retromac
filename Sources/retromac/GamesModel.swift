@@ -7,6 +7,10 @@ import RetromacCore
 final class GamesModel {
     var dats: [SystemID: DatFile] = [:]
     var datError: String?
+    var datProgress: String?
+    /// Consoles retromac can install an emulator for; others are filed and wait for a later update.
+    let installable: Set<SystemID> = Set((try? Manifest.bundled())?.installableSystems ?? [])
+    private var analysis: Task<Void, Never>?
     var candidates: [ImportCandidate] = []
     var busy = false
     /// Drops are refused while a commit is copying files.
@@ -54,7 +58,32 @@ final class GamesModel {
 
     func analyze(_ urls: [URL]) async {
         dropped += urls
-        await reanalyze()
+        let task = Task { await reanalyze() }
+        analysis = task
+        await task.value
+    }
+
+    /// Stops a running analysis; the dropped items are forgotten.
+    func cancel() {
+        analysis?.cancel()
+        generation += 1
+        dropped = []
+        busy = false
+        message = "Cancelled."
+    }
+
+    func updated(_ system: SystemID) -> Date? { DatStore(paths: paths).updated(system) }
+
+    func updateDats() async {
+        busy = true
+        defer { busy = false; datProgress = nil }
+        let results = await DatUpdater.update(store: DatStore(paths: paths), downloader: URLSessionDownloader(),
+                                              runner: ProcessRunner()) { done, total in
+            Task { @MainActor in self.datProgress = "Downloading \(done + 1) of \(total)…" }
+        }
+        dats = DatStore(paths: paths).load()
+        let failed = results.filter { if case .failure = $0.1 { true } else { false } }.map { $0.0.displayName }
+        datError = failed.isEmpty ? nil : "Couldn't update: \(failed.joined(separator: ", ")). Try again later."
     }
 
     private func reanalyze() async {
@@ -64,7 +93,8 @@ final class GamesModel {
         message = nil
         let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner())
         let urls = dropped
-        let result = await Task.detached { Result { try importer.analyze(urls) } }.value
+        let worker = Task.detached { Result { try importer.analyze(urls) } }
+        let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
         guard mine == generation else { return }
         busy = false
         switch result {

@@ -96,6 +96,12 @@ public struct DatStore: Sendable {
         return dats
     }
 
+    /// When a system's index was last written.
+    public func updated(_ system: SystemID) -> Date? {
+        let url = dir.appending(path: "\(system.rawValue).json")
+        return (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
     public func lookup(_ system: SystemID, serial: String) -> DatEntry? {
         guard let dat = load()[system] else { return nil }
         return SerialKey.keys(for: serial, system: system).lazy.compactMap { dat.serials[$0] }.first

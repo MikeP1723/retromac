@@ -13,22 +13,26 @@ struct GamesStep: View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox("Game databases") {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(SystemID.allCases, id: \.self) { system in
+                    ForEach(SystemID.allCases.filter { DatUpdater.sources[$0] != nil }, id: \.self) { system in
                         HStack {
                             Text(system.displayName)
                             Spacer()
                             if let dat = games.dats[system] {
-                                Text("No-Intro \(dat.version) · \(dat.entries.count.formatted()) games").foregroundStyle(.secondary)
+                                let date = games.updated(system).map { " · updated \($0.formatted(date: .abbreviated, time: .omitted))" } ?? ""
+                                Text("\((dat.entries.count + dat.serials.count).formatted()) entries\(date)").foregroundStyle(.secondary)
                             } else {
-                                Text("Not imported").foregroundStyle(.secondary)
+                                Text("Not downloaded").foregroundStyle(.secondary)
                             }
                         }
                     }
                     HStack {
-                        Button("Import DAT Files…") { chooseDats() }
+                        Button("Update Game Databases") { Task { await games.updateDats() } }
+                            .disabled(games.busy)
+                        Button("Import DAT Files…") { chooseDats() }.disabled(games.busy)
+                        if let progress = games.datProgress { Text(progress).foregroundStyle(.secondary) }
                         if let error = games.datError { Text(error).foregroundStyle(.red) }
                     }
-                    Text("Download the No-Intro DATs for these systems from DAT-o-MATIC (datomatic.no-intro.org), then import them here. Without them, games are still added, but under their file names.")
+                    Text("Downloaded from libretro-database on GitHub. Games not in a database are still added, with cleaned-up names.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,13 +55,16 @@ struct GamesStep: View {
 
             if !games.candidates.isEmpty {
                 List(games.candidates) { item in
-                    CandidateRow(item: item, enabledSystems: enabledSystems)
+                    CandidateRow(item: item, enabledSystems: enabledSystems, installable: games.installable)
                 }
                 .frame(minHeight: 120)
             }
 
             HStack {
-                if games.busy { ProgressView().controlSize(.small) }
+                if games.busy {
+                    ProgressView().controlSize(.small)
+                    if games.datProgress == nil { Button("Cancel") { games.cancel() } }
+                }
                 if let message = games.message { Text(message).foregroundStyle(.secondary) }
                 Spacer()
                 Button("Clear") { games.clear() }.disabled(games.candidates.isEmpty || games.busy)
@@ -85,6 +92,7 @@ struct GamesStep: View {
 private struct CandidateRow: View {
     let item: ImportCandidate
     let enabledSystems: Set<SystemID>
+    let installable: Set<SystemID>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -94,7 +102,10 @@ private struct CandidateRow: View {
                 Spacer()
                 Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
-            if let system = item.status.system, !enabledSystems.contains(system) {
+            if let system = item.status.system, !installable.contains(system) {
+                Text("\(name(system)) emulator arrives in a later update — this game is filed and waiting.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if let system = item.status.system, !enabledSystems.contains(system) {
                 Text("\(name(system)) isn't set up — enable it on the Systems step.")
                     .font(.caption).foregroundStyle(.orange)
             }

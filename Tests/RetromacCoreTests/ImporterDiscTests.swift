@@ -93,3 +93,13 @@ extension ImportRig {
     #expect(candidates.map(\.status) == [.unidentified(reason: "not a recognized game image")])
     #expect(candidates[0].destination == nil)
 }
+@Test func cancelledAnalysisStopsBetweenFiles() async throws {
+    let rig = try ImportRig()
+    let files = try (0..<5).map { try rig.drop("g\($0).nes", nesROM(prg: Data(repeating: UInt8($0), count: 16384))) }
+    let importer = rig.importer
+    let count = await Task { () -> Int in
+        withUnsafeCurrentTask { $0?.cancel() }
+        return (try? importer.analyze(files).1.count) ?? -1
+    }.value
+    #expect(count == 0)
+}
