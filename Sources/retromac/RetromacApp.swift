@@ -6,6 +6,7 @@ import SwiftUI
 struct RetromacApp: App {
     @State private var model: WizardModel
     @State private var updates: UpdateModel
+    @State private var games: GamesModel
 
     init() {
         // Lets `swift run retromac` show a normal window and Dock icon outside an .app bundle.
@@ -13,11 +14,12 @@ struct RetromacApp: App {
         let wizard = WizardModel()
         _model = State(initialValue: wizard)
         _updates = State(initialValue: UpdateModel(paths: wizard.paths, profile: { wizard.profile }))
+        _games = State(initialValue: GamesModel(paths: wizard.paths, libraryRoot: { wizard.profile.libraryRoot }))
     }
 
     var body: some Scene {
         WindowGroup("retromac") {
-            WizardView(model: model, updates: updates)
+            WizardView(model: model, updates: updates, games: games)
                 .frame(minWidth: 620, minHeight: 460)
                 .task { await updates.check(force: false) }
                 .sheet(isPresented: $updates.showSheet) { UpdatesView(model: updates) }
@@ -38,6 +40,7 @@ struct RetromacApp: App {
 struct WizardView: View {
     @Bindable var model: WizardModel
     @Bindable var updates: UpdateModel
+    @Bindable var games: GamesModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -82,6 +85,7 @@ struct WizardView: View {
                 case .controllers: ControllersStep(model: model)
                 case .library: LibraryStep(model: model)
                 case .apply: ApplyStep(model: model)
+                case .games: GamesStep(games: games, enabledSystems: model.profile.systems)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -90,17 +94,18 @@ struct WizardView: View {
             Divider()
             HStack {
                 Button("Back") { model.step = WizardModel.Step(rawValue: model.step.rawValue - 1) ?? .display }
-                    .disabled(model.step == .display || model.busy)
+                    .disabled(model.step == .display || model.busy || games.busy)
                 Spacer()
-                if model.step != .apply {
-                    Button("Next") { model.step = WizardModel.Step(rawValue: model.step.rawValue + 1) ?? .apply }
-                        .keyboardShortcut(.defaultAction)
+                if model.step != .games {
+                    Button("Next") { model.step = WizardModel.Step(rawValue: model.step.rawValue + 1) ?? .games }
+                        .keyboardShortcut(model.step == .apply ? nil : .defaultAction)
+                        .disabled(model.busy)
                 } else {
-                    if model.applied {
+                    if FileManager.default.fileExists(atPath: model.paths.applications.appending(path: "ES-DE.app").path) {
                         Button("Open ES-DE") { model.openESDE() }
                     }
                     Button("Done") { NSApplication.shared.terminate(nil) }
-                        .disabled(model.busy)
+                        .disabled(games.busy)
                 }
             }
             .padding()

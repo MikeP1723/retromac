@@ -7,7 +7,7 @@ import RetromacCore
 @Observable @MainActor
 final class WizardModel {
     enum Step: Int, CaseIterable {
-        case display, systems, controllers, library, apply
+        case display, systems, controllers, library, apply, games
 
         var title: String {
             switch self {
@@ -16,6 +16,7 @@ final class WizardModel {
             case .controllers: "Controllers"
             case .library: "Library"
             case .apply: "Install"
+            case .games: "Games"
             }
         }
     }
