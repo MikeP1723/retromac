@@ -158,3 +158,40 @@ extension ImportRig {
     #expect(id(try isoImage(dir.appending(path: "a.iso"), systemCNF: "boot2 = cdrom0:\\SLUS_200.62;1\n"))?.system == .ps2)
     #expect(id(try isoImage(dir.appending(path: "b.iso"), systemCNF: nil, size: 2 << 30))?.system == .ps2)
 }
+@Test func failedSetCopyLeavesNothingBehind() throws {
+    let rig = try ImportRig()
+    let dir = rig.drops.appending(path: "set")
+    _ = try isoImage(dir.appending(path: "Track 1.bin"), systemCNF: "BOOT = cdrom:\\SCUS_941.63;1\n", raw: true, size: 1 << 20)
+    let unreadable = dir.appending(path: "Track 2.bin")
+    try write("audio", to: unreadable)
+    try write("FILE \"Track 1.bin\" BINARY\n  TRACK 01 MODE2/2352\nFILE \"Track 2.bin\" BINARY\n  TRACK 02 AUDIO\n", to: dir.appending(path: "Game.cue"))
+    let cart = try rig.drop("ok.nes", nesROM())
+    let (session, candidates) = try rig.importer.analyze([dir, cart])
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadable.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: unreadable.path) }
+    let done = try rig.importer.commit(session, candidates)
+    guard case .failed = done[0].status else { Issue.record("expected failed, got \(done[0].status)"); return }
+    #expect(done[1].status == .unverified(.nes))
+    let psx = rig.library.appending(path: "psx")
+    #expect(((try? FileManager.default.contentsOfDirectory(atPath: psx.path)) ?? []).isEmpty)
+    #expect(FileManager.default.fileExists(atPath: rig.library.appending(path: "nes/ok.nes").path))
+}
+@Test func discAlreadyInLibraryUnderOtherNameIsDuplicate() throws {
+    let rig = try ImportRig()
+    let iso = try gcmImage(rig.drops.appending(path: "Zelda (U).iso"), id: "GZLE", wii: false)
+    let (s1, c1) = try rig.importer.analyze([iso])
+    _ = try rig.importer.commit(s1, c1)
+    try rig.importClrMame("Nintendo - GameCube", "game ( name \"The Legend of Zelda - The Wind Waker (USA)\" serial \"DL-DOL-GZLE-USA\" rom ( name \"z\" sha1 A1 ) )")
+    #expect(try rig.importer.analyze([iso]).1.map(\.status) == [.duplicate(.gc)])
+}
+@Test func differentGameSameNameAndSizeIsNotSkipped() throws {
+    let rig = try ImportRig()
+    let a = try gcmImage(rig.drops.appending(path: "one/Alpha.iso"), id: "GAAE", wii: false)
+    let (s1, c1) = try rig.importer.analyze([a])
+    _ = try rig.importer.commit(s1, c1)
+    let b = try gcmImage(rig.drops.appending(path: "two/Alpha.iso"), id: "GBBE", wii: false)
+    let (s2, c2) = try rig.importer.analyze([b])
+    #expect(c2.map(\.status) == [.unverified(.gc)])
+    let done = try rig.importer.commit(s2, c2)
+    #expect(done[0].destination?.lastPathComponent == "Alpha (2).iso")
+}

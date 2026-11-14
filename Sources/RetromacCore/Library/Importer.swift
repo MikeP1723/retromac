@@ -103,8 +103,10 @@ public struct Importer: Sendable {
         var seen: [String: URL] = [:]
         /// SHA-1 → file, per library folder, built on first use.
         var existing: [URL: [String: URL]] = [:]
-        /// "system:serial" of disc games already planned in this analysis.
+        /// "system:serial:disc" of disc games already planned in this analysis.
         var seenDiscs: Set<String> = []
+        /// "serial:disc" of disc games already in each library folder, from header reads, built on first use.
+        var libraryDiscs: [URL: Set<String>] = [:]
     }
 
     /// Handles files dropped together; a .bin a .cue in the same group refers to belongs to that cue.
@@ -260,15 +262,33 @@ public struct Importer: Sendable {
             item.files = [FileCopy(from: file, to: destination, move: movable(file))]
         }
 
-        let key = id.serial.map { "\(system.rawValue):\(SerialKey.normalize($0)):\(id.disc ?? 0)" }
+        // Same disc = same serial and disc number, wherever it's filed and whatever it's called.
+        let discKey = id.serial.map { "\(SerialKey.normalize($0)):\(id.disc ?? 0)" }
         let payload = item.files.last!
-        if (key.map { state.seenDiscs.contains($0) } ?? false) || Self.sameSize(payload.from, payload.to) {
+        let duplicate: Bool
+        if let discKey {
+            duplicate = state.seenDiscs.contains("\(system.rawValue):\(discKey)") || libraryDiscs(in: folder, &state).contains(discKey)
+            state.seenDiscs.insert("\(system.rawValue):\(discKey)")
+        } else {
+            duplicate = Self.sameSize(payload.from, payload.to)
+        }
+        if duplicate {
             item.status = .duplicate(system)
             item.files = []
-        } else if let key {
-            state.seenDiscs.insert(key)
         }
         state.candidates.append(item)
+    }
+
+    func libraryDiscs(in folder: URL, _ state: inout Analysis) -> Set<String> {
+        if let known = state.libraryDiscs[folder] { return known }
+        var keys: Set<String> = []
+        for (file, _) in walk(folder) where DiscSniffer.extensions.contains(file.pathExtension.lowercased()) {
+            if case .success(let id) = DiscSniffer.sniff(file), let serial = id.serial {
+                keys.insert("\(SerialKey.normalize(serial)):\(id.disc ?? 0)")
+            }
+        }
+        state.libraryDiscs[folder] = keys
+        return keys
     }
 
     static func sameSize(_ a: URL, _ b: URL) -> Bool {
@@ -333,26 +353,32 @@ public struct Importer: Sendable {
         var result: [ImportCandidate] = []
         for var item in candidates {
             defer { result.append(item) }
-            if !item.files.isEmpty {
-                item = try commitSet(item)
-                continue
+            // One item failing (disk full, permissions) is reported on that item; the rest still go in.
+            do {
+                if !item.files.isEmpty {
+                    item = try commitSet(item)
+                    continue
+                }
+                guard let staged = item.staged, let wanted = item.destination, let sha = item.sha1 else { continue }
+                switch item.status {
+                case .identified, .unverified, .unidentified: break
+                default: continue
+                }
+                if existingMatches(wanted, sha) {
+                    item.status = .duplicate(item.status.system)
+                    continue
+                }
+                let destination = Self.freeName(for: wanted)
+                try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: staged, to: destination)
+                if case .unidentified(let reason) = item.status {
+                    try (reason + "\n").write(to: destination.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
+                }
+                item.destination = destination
+            } catch {
+                item.status = .failed("couldn't add it: \(error.localizedDescription)")
+                item.files = []
             }
-            guard let staged = item.staged, let wanted = item.destination, let sha = item.sha1 else { continue }
-            switch item.status {
-            case .identified, .unverified, .unidentified: break
-            default: continue
-            }
-            if existingMatches(wanted, sha) {
-                item.status = .duplicate(item.status.system)
-                continue
-            }
-            let destination = Self.freeName(for: wanted)
-            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.copyItem(at: staged, to: destination)
-            if case .unidentified(let reason) = item.status {
-                try (reason + "\n").write(to: destination.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
-            }
-            item.destination = destination
         }
         return result
     }
@@ -361,10 +387,6 @@ public struct Importer: Sendable {
     /// in its folder first and then renamed, so an interrupted copy never sits at the final name.
     func commitSet(_ item: ImportCandidate) throws -> ImportCandidate {
         var item = item
-        guard let payload = item.files.last, !Self.sameSize(payload.from, payload.to) else {
-            item.status = .duplicate(item.status.system)
-            return item
-        }
         let fm = FileManager.default
         var suffix = ""
         var n = 2
@@ -380,12 +402,27 @@ public struct Importer: Sendable {
             }
             try sheet.write(to: cue.from, atomically: true, encoding: .utf8)
         }
-        for file in item.files {
-            let target = Self.suffixed(file.to, suffix)
-            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let partial = target.deletingLastPathComponent().appending(path: ".retromac-\(UUID().uuidString).part")
-            if file.move { try fm.moveItem(at: file.from, to: partial) } else { try fm.copyItem(at: file.from, to: partial) }
-            try fm.moveItem(at: partial, to: target)
+        // All or nothing: if any file of the set fails, the ones already placed are taken back out.
+        var placed: [(file: FileCopy, target: URL)] = []
+        do {
+            for file in item.files {
+                let target = Self.suffixed(file.to, suffix)
+                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let partial = target.deletingLastPathComponent().appending(path: ".retromac-\(UUID().uuidString).part")
+                do {
+                    if file.move { try fm.moveItem(at: file.from, to: partial) } else { try fm.copyItem(at: file.from, to: partial) }
+                    try fm.moveItem(at: partial, to: target)
+                } catch {
+                    try? fm.removeItem(at: partial)
+                    throw error
+                }
+                placed.append((file, target))
+            }
+        } catch {
+            for (file, target) in placed.reversed() {
+                if file.move { try? fm.moveItem(at: target, to: file.from) } else { try? fm.removeItem(at: target) }
+            }
+            throw error
         }
         item.destination = item.destination.map { Self.suffixed($0, suffix) }
         item.files = []
