@@ -42,6 +42,24 @@ struct FileCopy: Equatable, Sendable {
     var move: Bool
 }
 
+public enum ImportError: Error, Equatable {
+    /// Checked before anything is copied.
+    case notEnoughSpace(needed: Int64, free: Int64)
+}
+
+/// Totals for the summary shown after scanning a folder.
+public struct ImportSummary: Equatable, Sendable {
+    public var identified = 0
+    public var unverified = 0
+    public var unidentified = 0
+    public var duplicates = 0
+    public var skipped = 0
+    public var failed = 0
+    /// Bytes commit would newly write; files moved out of the session dir need no new space.
+    public var bytesToCopy: Int64 = 0
+    public var bySystem: [SystemID: Int] = [:]
+}
+
 /// Owns the temp files from analyze → commit; removed when released. Reusing a session across
 /// analyses (more files dropped before Add) keeps archives from being unpacked again.
 public final class ImportSession: @unchecked Sendable {
@@ -95,19 +113,50 @@ public struct Importer: Sendable {
     public var unidentifiedDir: URL { libraryRoot.appending(path: "_Unidentified") }
 
     /// Works out what each dropped item would become; writes nothing under the library.
-    public func analyze(_ urls: [URL], reusing existing: ImportSession? = nil) throws -> (ImportSession, [ImportCandidate]) {
+    /// `progress` reports top-level files scanned against the total found by one quick walk first;
+    /// an archive counts as one file.
+    public func analyze(_ urls: [URL], reusing existing: ImportSession? = nil,
+                        progress: (@Sendable (_ scanned: Int, _ total: Int) -> Void)? = nil) throws -> (ImportSession, [ImportCandidate]) {
         let session = try existing ?? ImportSession()
-        var state = Analysis(session: session, index: dats.load())
+        var groups: [[(URL, String)]] = []
         var loose: [(URL, String)] = []
         for url in urls {
             if url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                handleGroup(walk(url).map { ($0.0, "\(url.lastPathComponent)/\($0.1)") }, depth: 0, &state)
+                groups.append(walk(url).map { ($0.0, "\(url.lastPathComponent)/\($0.1)") })
             } else {
                 loose.append((url, url.lastPathComponent))
             }
         }
-        handleGroup(loose, depth: 0, &state)
+        groups.append(loose)
+        var state = Analysis(session: session, index: dats.load(), progress: progress, total: groups.reduce(0) { $0 + $1.count })
+        for group in groups { handleGroup(group, depth: 0, &state) }
         return (session, state.candidates)
+    }
+
+    public static func summarize(_ candidates: [ImportCandidate]) -> ImportSummary {
+        var summary = ImportSummary()
+        for item in candidates {
+            switch item.status {
+            case .identified(let system, _): summary.identified += 1; summary.bySystem[system, default: 0] += 1
+            case .unverified(let system): summary.unverified += 1; summary.bySystem[system, default: 0] += 1
+            case .unidentified: summary.unidentified += 1
+            case .duplicate: summary.duplicates += 1
+            case .notAGame: summary.skipped += 1
+            case .failed: summary.failed += 1
+            }
+            summary.bytesToCopy += bytesToCopy(item)
+        }
+        return summary
+    }
+
+    static func bytesToCopy(_ item: ImportCandidate) -> Int64 {
+        switch item.status {
+        case .identified, .unverified, .unidentified: break
+        default: return 0
+        }
+        let size = { (url: URL) in Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        if !item.files.isEmpty { return item.files.filter { !$0.move }.reduce(0) { $0 + size($1.from) } }
+        return item.staged.map(size) ?? 0
     }
 
     struct Analysis {
@@ -122,15 +171,24 @@ public struct Importer: Sendable {
         var seenDiscs: Set<String> = []
         /// "serial:disc" of disc games already in each library folder, from header reads, built on first use.
         var libraryDiscs: [URL: Set<String>] = [:]
+        var progress: (@Sendable (Int, Int) -> Void)?
+        var total = 0
+        var scanned = 0
     }
 
     /// Handles files dropped together; a .bin a .cue in the same group refers to belongs to that cue.
     func handleGroup(_ files: [(URL, String)], depth: Int, _ state: inout Analysis) {
         let cues = files.filter { $0.0.pathExtension.lowercased() == "cue" }
         let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path.lowercased() } })
-        for (file, source) in files where !claimed.contains(file.standardizedFileURL.path.lowercased()) {
+        for (file, source) in files {
             if Task.isCancelled { return }
-            handle(file, source: source, depth: depth, &state)
+            if !claimed.contains(file.standardizedFileURL.path.lowercased()) {
+                handle(file, source: source, depth: depth, &state)
+            }
+            if depth == 0 {
+                state.scanned += 1
+                state.progress?(state.scanned, state.total)
+            }
         }
     }
 
@@ -379,6 +437,12 @@ public struct Importer: Sendable {
     /// Copies identified, unverified and unidentified candidates; returns them with final destinations.
     public func commit(_ session: ImportSession, _ candidates: [ImportCandidate]) throws -> [ImportCandidate] {
         let fm = FileManager.default
+        let needed = Self.summarize(candidates).bytesToCopy
+        var probe = libraryRoot
+        while !fm.fileExists(atPath: probe.path), probe.pathComponents.count > 1 { probe.deleteLastPathComponent() }
+        if needed > 0, let free = freeSpace(probe), needed + (512 << 20) > free {
+            throw ImportError.notEnoughSpace(needed: needed, free: free)
+        }
         var result: [ImportCandidate] = []
         for var item in candidates {
             defer { result.append(item) }
