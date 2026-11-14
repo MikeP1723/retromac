@@ -15,7 +15,7 @@ public enum ESDESystems {
         .genesis: Info(fullname: "Sega Genesis", extensions: ["md", "gen", "bin", "smd", "zip"]),
         .n64: Info(fullname: "Nintendo 64", extensions: ["z64", "n64", "v64", "zip"]),
         // Never .bin/.iso: track files and bare images are reached through their .cue (see DiscSets).
-        .psx: Info(fullname: "Sony PlayStation", extensions: ["cue", "chd", "m3u"]),
+        .psx: Info(fullname: "Sony PlayStation", extensions: ["cue", "chd", "m3u", "pbp"]),
         .saturn: Info(fullname: "Sega Saturn", extensions: ["cue", "chd", "m3u"]),
     ]
 

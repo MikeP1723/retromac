@@ -113,3 +113,22 @@ func realChdmanRoundTrip() throws {
     // CHD contents are compressed; retromac can't read their headers (see DiscSniffer).
     if case .failure? = DiscSniffer.sniff(chd) {} else { Issue.record("expected CHD to be reported unidentifiable") }
 }
+@Test func leftoverPartialsAreRemoved() throws {
+    let dir = try discFolder()
+    let library = dir.deletingLastPathComponent()
+    let set = dir.appending(path: "G.m3u")
+    try FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
+    for url in [dir.appending(path: ".retromac-1.chd"), set.appending(path: ".retromac-2.chd")] { try Data("x".utf8).write(to: url) }
+    try Data("keep".utf8).write(to: dir.appending(path: ".other"))
+    _ = try twoTrackSet(dir, "Game")
+    ChdTool.removeLeftovers(in: library)
+    #expect(try names(dir) == [".other", "G.m3u", "Game (Track 1).bin", "Game (Track 2).bin", "Game.cue"])
+    #expect(try names(set).isEmpty)
+}
+@Test func cueWithChdBesideItIsNotConvertible() throws {
+    let dir = try discFolder()
+    _ = try twoTrackSet(dir, "Game")
+    _ = try twoTrackSet(dir, "Other")
+    try Data("MComprHD".utf8).write(to: dir.appending(path: "Game.chd"))
+    #expect(ChdTool.convertible(in: dir.deletingLastPathComponent()).map(\.lastPathComponent) == ["Other.cue"])
+}

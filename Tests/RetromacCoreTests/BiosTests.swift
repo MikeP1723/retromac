@@ -78,3 +78,19 @@ extension ImportRig {
     #expect(BiosFile.known.first { $0.fileName == "scph5501.bin" }?.md5 == "490f666e1afb15b7362b406ed1cea246")
     #expect(BiosFile.known.first { $0.fileName == "sega_101.bin" }?.md5 == "85ec9ca47d8f6807718151cbcca8b964")
 }
+@Test func differentFileWithBiosNameIsReportedNotSuffixed() throws {
+    let rig = try ImportRig()
+    try FileManager.default.createDirectory(at: rig.biosDir, withIntermediateDirectories: true)
+    let existing = rig.biosDir.appending(path: "mpr-17933.bin")
+    try fakeBios(seed: 3).write(to: existing)
+    let importer = rig.biosImporter(rig.biosDir)
+    let (session, candidates) = try importer.analyze([try rig.drop("good.bin", fakeBios(seed: 1))])
+    guard case .failed(let reason) = candidates.first?.status else {
+        Issue.record("expected failure, got \(candidates.map(\.status))")
+        return
+    }
+    #expect(reason.contains("mpr-17933.bin"))
+    _ = try importer.commit(session, candidates)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: rig.biosDir.path) == ["mpr-17933.bin"])
+    #expect(try Data(contentsOf: existing) == fakeBios(seed: 3))
+}

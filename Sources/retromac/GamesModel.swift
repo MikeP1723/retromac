@@ -160,6 +160,7 @@ final class GamesModel {
     }
 
     func refreshConvertible() {
+        if !converting { ChdTool.removeLeftovers(in: libraryRoot()) }
         convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
     }
 

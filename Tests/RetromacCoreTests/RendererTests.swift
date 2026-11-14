@@ -114,3 +114,9 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
     let extensions = try #require(psx.firstMatch(of: /<extension>([^<]*)<\/extension>/)).1
     #expect(!extensions.contains(".bin") && !extensions.contains(".iso"))
 }
+
+@Test func psxListsPbp() throws {
+    // The importer files PSP-eboot PS1 games as .pbp; Beetle PSX HW plays them.
+    let xml = ESDESystems.xml(for: [.psx], manifest: try Manifest.bundled())
+    #expect(xml.contains(".pbp"))
+}

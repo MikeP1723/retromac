@@ -212,8 +212,20 @@ public struct Importer: Sendable {
         }
 
         if let biosDirectory, let (match, data) = BiosFile.match(real, in: bios) {
-            stage(source, .bios(match.system, region: match.region), bytes: data,
-                  destination: biosDirectory.appending(path: match.fileName), &state)
+            let destination = biosDirectory.appending(path: match.fileName)
+            // The core opens only this exact name, so a suffixed copy would never be used. RetroArch's
+            // folder isn't retromac's: an existing different file there is reported, never replaced.
+            if FileManager.default.fileExists(atPath: destination.path) {
+                if BiosFile.match(destination, in: [match]) != nil {
+                    var item = candidate(source, .duplicate(nil))
+                    item.destination = destination
+                    state.candidates.append(item)
+                } else {
+                    state.candidates.append(failed(source, "a different file named \(match.fileName) is already in RetroArch's system folder"))
+                }
+                return
+            }
+            stage(source, .bios(match.system, region: match.region), bytes: data, destination: destination, checkFolder: false, &state)
             return
         }
 
@@ -412,12 +424,15 @@ public struct Importer: Sendable {
         return size(a) == target
     }
 
-    func stage(_ source: String, _ status: ImportStatus, bytes: Data, destination: URL, _ state: inout Analysis) {
+    /// `checkFolder: false` skips hashing the destination folder for duplicates (the BIOS folder may be
+    /// large and isn't retromac's; its one relevant name is checked by the caller).
+    func stage(_ source: String, _ status: ImportStatus, bytes: Data, destination: URL, checkFolder: Bool = true,
+               _ state: inout Analysis) {
         let sha = Self.sha1(bytes)
         var item = candidate(source, status)
         item.sha1 = sha
         item.destination = destination
-        if let earlier = state.seen[sha] ?? libraryFile(sha, in: destination.deletingLastPathComponent(), &state) {
+        if let earlier = state.seen[sha] ?? (checkFolder ? libraryFile(sha, in: destination.deletingLastPathComponent(), &state) : nil) {
             item.status = .duplicate(status.system)
             item.destination = earlier
             state.candidates.append(item)

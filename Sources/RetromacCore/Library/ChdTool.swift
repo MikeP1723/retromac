@@ -53,14 +53,33 @@ public struct ChdTool: Sendable {
         return target
     }
 
+    /// Deletes partial `.retromac-*.chd` files left when retromac quit mid-conversion. Never call it
+    /// while a conversion is running.
+    public static func removeLeftovers(in libraryRoot: URL) {
+        for folder in discFolders(libraryRoot) {
+            let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
+            while let url = walker?.nextObject() as? URL {
+                if url.lastPathComponent.hasPrefix(".retromac-"), url.pathExtension.lowercased() == "chd" {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+    }
+
+    private static func discFolders(_ libraryRoot: URL) -> [URL] {
+        SystemID.allCases.filter { DiscSets.systems.contains($0) }.map { libraryRoot.appending(path: $0.rawValue) }
+    }
+
     /// Every PS1 and Saturn cue in the library, including inside multi-disc folders, by path.
     public static func convertible(in libraryRoot: URL) -> [URL] {
         var cues: [URL] = []
-        for system in SystemID.allCases where DiscSets.systems.contains(system) {
-            let folder = libraryRoot.appending(path: system.rawValue)
+        for folder in discFolders(libraryRoot) {
             let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             while let url = walker?.nextObject() as? URL {
-                if url.pathExtension.lowercased() == "cue" { cues.append(url) }
+                // A cue with a .chd of its name beside it would only fail with alreadyExists every time.
+                guard url.pathExtension.lowercased() == "cue",
+                      !FileManager.default.fileExists(atPath: url.deletingPathExtension().appendingPathExtension("chd").path) else { continue }
+                cues.append(url)
             }
         }
         return cues.sorted { $0.path < $1.path }
