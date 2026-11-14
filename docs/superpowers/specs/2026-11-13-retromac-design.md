@@ -227,6 +227,46 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
 
 **Trust model.** A release manifest is exactly as trusted as Mike's GitHub account, which is the same trust the app binary already depends on. The compiled-in host allowlist and license policy limit the damage from a bad manifest.
 
+## Console mode
+
+**Intent.** For a Mac that lives under the TV: powering on or waking it lands the player in ES-DE's game list, full screen, with the whole library ready. A controller combo puts the Mac to rest, and another returns to the desktop. It feels like a game console, not a computer.
+
+**It's opt-in, never a default.** A new **Console Mode** wizard step, after Controllers and before Install, offers each part separately. Each choice gets a plain-language explanation of what it does and what it costs. Turning console mode off undoes everything retromac set up.
+
+**The choices in the wizard:**
+
+| Choice | What retromac does | Constraint the wizard explains |
+|---|---|---|
+| **Start in ES-DE when you log in** | Installs a login agent, which launches ES-DE full screen with retromac's `--home`. | None. This is the core switch; the other choices assume it's on. |
+| **Log in automatically when the Mac turns on** | Detects whether automatic login and FileVault are on, and opens the right System Settings pane. **It never changes them itself.** | macOS refuses automatic login while FileVault disk encryption is on. Turning FileVault off means someone with the Mac can read its disk. The wizard says this plainly, and the choice is yours. |
+| **No password after waking** | Detects the Lock Screen setting and opens its System Settings pane. | Anyone at the TV gets into the Mac account without a password. Recent macOS doesn't let apps change this silently. |
+| **What the sleep combo does** | **True sleep** (lowest power; wake with the power button or a keyboard) or **Console standby** (the screen turns off but the Mac stays awake; any controller button wakes it back into ES-DE). | macOS can't wake from sleep using a game controller, only a keyboard, mouse, trackpad or the power button. Console standby uses a few watts of idle power. |
+
+Each row shows its live status, e.g. "Automatic login: off — FileVault is on". A **Check again** button refreshes it after the user returns from System Settings.
+
+**Controller combos.** The login agent listens for these with GameController background monitoring, so they work while ES-DE or RetroArch is in front:
+- **Hold Guide/Home + Start for 2 s:** the chosen sleep behavior.
+- **Hold Guide/Home + Select for 2 s:** exit to the desktop. This quits ES-DE (and RetroArch, if running) and pauses console mode until the next login. retromac's home screen opens, so the way back is obvious.
+- **Pads without a Guide button:** hold **L + R + Start** or **L + R + Select** for 2 s instead.
+- **No conflicts:** neither combo clashes with RetroArch's in-game Select+Start (quit game).
+
+**Login agent behavior:**
+- **Starting:** at login, launch ES-DE full screen and keep it in front.
+- **Waking:** after any wake (system wake or screen wake), relaunch ES-DE if it isn't running, unless the user exited to the desktop this session.
+- **Console standby:** hold a power assertion that stops idle system sleep but allows display sleep. The sleep combo turns the display off. A controller button press while the display is off declares user activity, which turns the screen back on, with ES-DE in front.
+- **True sleep:** the sleep combo puts the Mac to sleep.
+- **Turning console mode off:** remove the login agent and release every assertion.
+
+**Non-goals:**
+- Waking from true sleep with a controller (macOS doesn't allow it).
+- Changing FileVault, automatic login or lock-screen settings without the user doing it in System Settings.
+- A locked-down kiosk with no way back to macOS. The exit combo always works.
+
+**Anti-goals** (failure even if it technically works):
+- console mode switching itself on for anyone who didn't choose it
+- a security setting relaxed without the user doing it themselves
+- a player stuck in ES-DE with no way to reach the desktop
+
 ## Phasing
 
 1. **Spine:**
@@ -287,6 +327,8 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
    - **Existing installs are migrated once.**
    - **Licensing is unchanged:** emulators are still downloaded from upstream at runtime and never bundled.
    - **Scheduling:** planned as its own phase, right after 3a-2 merges.
+
+9. **Console mode** (Mike, 2026-11-13). This is an opt-in setup for a Mac dedicated to the TV. See the "Console mode" section.
 
 ## Findings from Phase 1 verification
 
