@@ -77,6 +77,7 @@ public enum DiscSets {
     private static func groupDiscs(in folder: URL, _ moves: inout [URL: URL]) throws {
         let fm = FileManager.default
         let discs = try topLevelFiles(folder).compactMap { file in disc(file).map { (file, $0.base) } }
+        let root = folder.resolvingSymlinksInPath().standardizedFileURL.path
         for (base, members) in Dictionary(grouping: discs, by: \.1) {
             let set = folder.appending(path: "\(base).m3u")
             var isDirectory: ObjCBool = false
@@ -87,7 +88,11 @@ public enum DiscSets {
             for (file, _) in members {
                 // A cue's tracks go first, so a bare image keeps pointing at its cue.
                 let tracks = file.pathExtension.lowercased() == "cue" ? DiscSniffer.cueFiles(file).map(\.url) : []
-                for track in tracks where fm.fileExists(atPath: track.path) {
+                // Only files directly in this folder: a cue may name "../" paths or symlinks, and
+                // retromac never moves anything from outside the library.
+                for track in tracks where fm.fileExists(atPath: track.path)
+                    && (try? track.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
+                    && track.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent().path == root {
                     try move(track, into: set, &moves, recordOnlyIfNew: true)
                 }
                 try move(file, into: set, &moves, recordOnlyIfNew: false)

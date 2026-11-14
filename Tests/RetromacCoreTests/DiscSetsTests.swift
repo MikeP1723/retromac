@@ -138,3 +138,14 @@ private func listing(_ dir: URL) -> [String] {
     #expect(FileManager.default.fileExists(atPath: root.appending(path: "psx/A.cue").path))
     #expect(!FileManager.default.fileExists(atPath: root.appending(path: "ps2/B.cue").path))
 }
+@Test func cueTracksOutsideTheFolderAreNeverMoved() throws {
+    let dir = try folder()
+    let outside = dir.deletingLastPathComponent().appending(path: "private.bin")
+    try Data("keep me".utf8).write(to: outside)
+    try "FILE \"../private.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
+        .write(to: dir.appending(path: "G (Disc 1).cue"), atomically: true, encoding: .utf8)
+    try cueSet(dir, "G (Disc 2)")
+    try DiscSets.organize(dir)
+    #expect(try Data(contentsOf: outside) == Data("keep me".utf8))
+    #expect(!FileManager.default.fileExists(atPath: dir.appending(path: "G.m3u/private.bin").path))
+}
