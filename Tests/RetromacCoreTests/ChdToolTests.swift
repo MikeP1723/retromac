@@ -132,3 +132,22 @@ func realChdmanRoundTrip() throws {
     try Data("MComprHD".utf8).write(to: dir.appending(path: "Game.chd"))
     #expect(ChdTool.convertible(in: dir.deletingLastPathComponent()).map(\.lastPathComponent) == ["Other.cue"])
 }
+
+@Test func trackSharedWithAnotherCueIsKept() throws {
+    let dir = try discFolder()
+    try Data(count: 2352 * 2).write(to: dir.appending(path: "Game.bin"))
+    let sheet = "FILE \"Game.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
+    try sheet.write(to: dir.appending(path: "Game.cue"), atomically: true, encoding: .utf8)
+    try sheet.write(to: dir.appending(path: "Game (Alt).cue"), atomically: true, encoding: .utf8)
+    _ = try ChdTool(runner: FakeChdman(), chdman: URL(filePath: "/opt/homebrew/bin/chdman")).convert(cue: dir.appending(path: "Game.cue"))
+    #expect(try names(dir) == ["Game (Alt).cue", "Game.bin", "Game.chd"])
+}
+
+@Test func trackNotNamedAfterTheCueIsKept() throws {
+    let dir = try discFolder()
+    try Data(count: 2352 * 2).write(to: dir.appending(path: "Other Game.bin"))
+    try "FILE \"Other Game.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
+        .write(to: dir.appending(path: "Game.cue"), atomically: true, encoding: .utf8)
+    _ = try ChdTool(runner: FakeChdman(), chdman: URL(filePath: "/opt/homebrew/bin/chdman")).convert(cue: dir.appending(path: "Game.cue"))
+    #expect(try names(dir) == ["Game.chd", "Other Game.bin"])
+}

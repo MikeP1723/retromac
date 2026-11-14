@@ -42,11 +42,18 @@ public struct ChdTool: Sendable {
             try? fm.removeItem(at: partial)
             throw error
         }
-        // Only the set's own files, directly beside the cue (never a "../" or symlinked track).
+        // Only the set's own files: directly beside the cue (never a "../" or symlinked track), named after it,
+        // and not used by another cue in the folder.
         let root = folder.resolvingSymlinksInPath().standardizedFileURL.path
+        let stem = cue.deletingPathExtension().lastPathComponent.lowercased()
+        let others = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.lowercased() == "cue" && $0.lastPathComponent != cue.lastPathComponent }
+        let shared = Set(others.flatMap { DiscSniffer.cueFiles($0).map { $0.url.lastPathComponent.lowercased() } })
         for track in DiscSniffer.cueFiles(cue).map(\.url)
         where (try? track.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
-            && track.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent().path == root {
+            && track.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent().path == root
+            && track.lastPathComponent.lowercased().hasPrefix(stem)
+            && !shared.contains(track.lastPathComponent.lowercased()) {
             try? fm.removeItem(at: track)
         }
         try? fm.removeItem(at: cue)

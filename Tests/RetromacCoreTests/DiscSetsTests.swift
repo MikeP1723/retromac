@@ -149,3 +149,13 @@ private func listing(_ dir: URL) -> [String] {
     #expect(try Data(contentsOf: outside) == Data("keep me".utf8))
     #expect(!FileManager.default.fileExists(atPath: dir.appending(path: "G.m3u/private.bin").path))
 }
+
+@Test func imageNameWithQuoteOrNewlineGetsNoCue() throws {
+    let dir = try folder()
+    try cueSet(dir, "Victim")
+    let evil = "Evil\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"Victim.bin"
+    try rawImage(dir.appending(path: evil + ".bin"))
+    _ = try DiscSets.organize(dir)
+    #expect(!FileManager.default.fileExists(atPath: dir.appending(path: evil + ".cue").path))
+    #expect(listing(dir).filter { $0.hasSuffix(".cue") } == ["Victim.cue"])
+}

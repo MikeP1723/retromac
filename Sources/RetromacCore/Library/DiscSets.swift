@@ -37,6 +37,10 @@ public enum DiscSets {
             .flatMap { DiscSniffer.cueFiles($0).map { $0.url.standardizedFileURL.path.lowercased() } })
         for image in files where images.contains(image.pathExtension.lowercased()) {
             guard !referenced.contains(image.standardizedFileURL.path.lowercased()) else { continue }
+            // A quote or line break in the name would write extra lines into the cue (and pull another game's
+            // file into it); such a file is filed but gets no cue.
+            guard !image.lastPathComponent.unicodeScalars.contains(where: { $0 == "\"" || CharacterSet.controlCharacters.contains($0) })
+            else { continue }
             let cue = image.deletingPathExtension().appendingPathExtension("cue")
             guard !FileManager.default.fileExists(atPath: cue.path), let mode = trackMode(image) else { continue }
             try "FILE \"\(image.lastPathComponent)\" BINARY\n  TRACK 01 \(mode)\n    INDEX 01 00:00:00\n"
