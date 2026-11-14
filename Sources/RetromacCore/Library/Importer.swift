@@ -31,6 +31,15 @@ public struct ImportCandidate: Identifiable, Equatable, Sendable {
     var staged: URL?
     /// SHA-1 of the bytes that would be written, for duplicate checks.
     var sha1: String?
+    /// Disc and console games: every file of the set, copied or (from the session dir) moved.
+    var files: [FileCopy] = []
+}
+
+struct FileCopy: Equatable, Sendable {
+    var from: URL
+    var to: URL
+    /// True for files extracted into the session dir; never true for the user's own files.
+    var move: Bool
 }
 
 /// Owns the temp files from one analyze → commit round; removed when released.
@@ -54,6 +63,9 @@ public struct Importer: Sendable {
     /// Archives inside archives are opened one level deep.
     static let maxArchiveDepth = 1
     static let unrecognized = "not a recognized NES, SNES, Genesis or N64 image"
+    static let unrecognizedImage = "not a recognized game image"
+    /// Archives holding disc images may be large; beyond this they aren't unpacked.
+    static let maxArchiveBytes = 16 << 30
 
     let libraryRoot: URL
     let dats: DatStore
@@ -71,15 +83,15 @@ public struct Importer: Sendable {
     public func analyze(_ urls: [URL]) throws -> (ImportSession, [ImportCandidate]) {
         let session = try ImportSession()
         var state = Analysis(session: session, index: dats.load())
+        var loose: [(URL, String)] = []
         for url in urls {
             if url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                for (file, relative) in walk(url) {
-                    handle(file, source: "\(url.lastPathComponent)/\(relative)", depth: 0, &state)
-                }
+                handleGroup(walk(url).map { ($0.0, "\(url.lastPathComponent)/\($0.1)") }, depth: 0, &state)
             } else {
-                handle(url, source: url.lastPathComponent, depth: 0, &state)
+                loose.append((url, url.lastPathComponent))
             }
         }
+        handleGroup(loose, depth: 0, &state)
         return (session, state.candidates)
     }
 
@@ -91,6 +103,17 @@ public struct Importer: Sendable {
         var seen: [String: URL] = [:]
         /// SHA-1 → file, per library folder, built on first use.
         var existing: [URL: [String: URL]] = [:]
+        /// "system:serial" of disc games already planned in this analysis.
+        var seenDiscs: Set<String> = []
+    }
+
+    /// Handles files dropped together; a .bin a .cue in the same group refers to belongs to that cue.
+    func handleGroup(_ files: [(URL, String)], depth: Int, _ state: inout Analysis) {
+        let cues = files.filter { $0.0.pathExtension.lowercased() == "cue" }
+        let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path } })
+        for (file, source) in files where !claimed.contains(file.standardizedFileURL.path) {
+            handle(file, source: source, depth: depth, &state)
+        }
     }
 
     func handle(_ file: URL, source: String, depth: Int, _ state: inout Analysis) {
@@ -101,10 +124,19 @@ public struct Importer: Sendable {
             return
         }
 
+        if DiscSniffer.extensions.contains(ext), let result = DiscSniffer.sniff(real) {
+            switch result {
+            case .success(let id): planDisc(real, source: source, id: id, &state)
+            case .failure(let unsupported): state.candidates.append(candidate(source, .unidentified(reason: unsupported.reason)))
+            }
+            return
+        }
+
         let looksLikeROM = RomSniffer.romExtensions.contains(ext)
         let size = (try? real.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         if size > Self.maxCartridgeBytes {
-            state.candidates.append(candidate(source, looksLikeROM ? .unidentified(reason: Self.tooLarge) : .notAGame))
+            let reason = DiscSniffer.extensions.contains(ext) && !looksLikeROM ? Self.unrecognizedImage : Self.tooLarge
+            state.candidates.append(candidate(source, looksLikeROM || DiscSniffer.extensions.contains(ext) ? .unidentified(reason: reason) : .notAGame))
             return
         }
         // Other files (PDFs, photos…) are only read in full when their first bytes carry a ROM signature.
@@ -151,10 +183,18 @@ public struct Importer: Sendable {
             state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
             return
         }
-        let sizes = listing.split(separator: "\n").compactMap { line in
-            line.split(separator: " ", omittingEmptySubsequences: true).dropFirst(4).first.flatMap { Int($0) }
+        let members: [(size: Int, name: String)] = listing.split(separator: "\n").compactMap { line in
+            let columns = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard columns.count > 8, let size = Int(columns[4]) else { return nil }
+            return (size, columns.dropFirst(8).joined(separator: " "))
         }
-        if sizes.contains(where: { $0 > Self.maxCartridgeBytes }) {
+        if members.reduce(0, { $0 + $1.size }) > Self.maxArchiveBytes {
+            state.candidates.append(candidate(source, .unidentified(reason: "archive too large to unpack")))
+            return
+        }
+        // Big members are only unpacked when they're disc images; anything else that big isn't a cartridge.
+        if members.contains(where: { $0.size > Self.maxCartridgeBytes
+            && !DiscSniffer.extensions.contains(URL(filePath: $0.name).pathExtension.lowercased()) }) {
             state.candidates.append(candidate(source, .unidentified(reason: Self.tooLarge)))
             return
         }
@@ -166,9 +206,61 @@ public struct Importer: Sendable {
             state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
             return
         }
-        for (member, relative) in walk(out) {
-            handle(member, source: "\(source) › \(relative)", depth: depth + 1, &state)
+        handleGroup(walk(out).map { ($0.0, "\(source) › \($0.1)") }, depth: depth + 1, &state)
+    }
+
+    /// Names and plans a disc or console game; nothing is read beyond what the sniffer already read.
+    func planDisc(_ file: URL, source: String, id: DiscID, _ state: inout Analysis) {
+        let system = id.system
+        let entry = id.serial.flatMap { serial in
+            state.index[system].flatMap { dat in SerialKey.keys(for: serial, system: system).lazy.compactMap { dat.serials[$0] }.first }
         }
+        let stem = file.deletingPathExtension().lastPathComponent
+        let name = RomSniffer.sanitize(entry?.name ?? NameCleaner.clean(stem, headerTitle: id.title))
+        let folder = libraryRoot.appending(path: system.rawValue)
+        let ext = file.pathExtension.lowercased()
+        let inSession = file.standardizedFileURL.path.hasPrefix(state.session.dir.standardizedFileURL.path)
+        var item = candidate(source, entry.map { .identified(system, name: $0.name) } ?? .unverified(system))
+        let destination = folder.appending(path: "\(name).\(ext)")
+        item.destination = destination
+
+        if ext == "cue" {
+            let tracks = DiscSniffer.cueFiles(file)
+            if let missing = tracks.first(where: { !FileManager.default.fileExists(atPath: $0.url.path) }) {
+                state.candidates.append(failed(source, "the .cue refers to a missing file: \(missing.name)"))
+                return
+            }
+            let names = tracks.count == 1 ? ["\(name).bin"] : tracks.indices.map { "\(name) (Track \($0 + 1)).bin" }
+            var sheet = (try? String(contentsOf: file, encoding: .utf8)) ?? (try? String(contentsOf: file, encoding: .isoLatin1)) ?? ""
+            for (track, newName) in zip(tracks, names) {
+                sheet = sheet.replacingOccurrences(of: "\"\(track.name)\"", with: "\"\(newName)\"")
+            }
+            let staged = state.session.dir.appending(path: "\(UUID().uuidString).cue")
+            guard (try? sheet.write(to: staged, atomically: true, encoding: .utf8)) != nil else {
+                state.candidates.append(failed(source, "couldn't stage the file"))
+                return
+            }
+            item.files = [FileCopy(from: staged, to: destination, move: true)]
+                + zip(tracks, names).map { FileCopy(from: $0.url, to: folder.appending(path: $1), move: inSession) }
+        } else {
+            item.files = [FileCopy(from: file, to: destination, move: inSession)]
+        }
+
+        let key = id.serial.map { "\(system.rawValue):\(SerialKey.normalize($0))" }
+        let payload = item.files.last!
+        if (key.map { state.seenDiscs.contains($0) } ?? false) || Self.sameSize(payload.from, payload.to) {
+            item.status = .duplicate(system)
+            item.files = []
+        } else if let key {
+            state.seenDiscs.insert(key)
+        }
+        state.candidates.append(item)
+    }
+
+    static func sameSize(_ a: URL, _ b: URL) -> Bool {
+        let size = { (url: URL) in try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 }
+        guard let target = size(b) else { return false }
+        return size(a) == target
     }
 
     func stage(_ source: String, _ status: ImportStatus, bytes: Data, destination: URL, _ state: inout Analysis) {
@@ -227,6 +319,10 @@ public struct Importer: Sendable {
         var result: [ImportCandidate] = []
         for var item in candidates {
             defer { result.append(item) }
+            if !item.files.isEmpty {
+                item = try commitSet(item)
+                continue
+            }
             guard let staged = item.staged, let wanted = item.destination, let sha = item.sha1 else { continue }
             switch item.status {
             case .identified, .unverified, .unidentified: break
@@ -245,6 +341,47 @@ public struct Importer: Sendable {
             item.destination = destination
         }
         return result
+    }
+
+    /// Files a disc game's set: a shared " (n)" suffix on collisions, each file written to a temp name
+    /// in its folder first and then renamed, so an interrupted copy never sits at the final name.
+    func commitSet(_ item: ImportCandidate) throws -> ImportCandidate {
+        var item = item
+        guard let payload = item.files.last, !Self.sameSize(payload.from, payload.to) else {
+            item.status = .duplicate(item.status.system)
+            return item
+        }
+        let fm = FileManager.default
+        var suffix = ""
+        var n = 2
+        while item.files.contains(where: { fm.fileExists(atPath: Self.suffixed($0.to, suffix).path) }) {
+            suffix = " (\(n))"
+            n += 1
+        }
+        if !suffix.isEmpty, let cue = item.files.first, cue.to.pathExtension == "cue" {
+            var sheet = try String(contentsOf: cue.from, encoding: .utf8)
+            for file in item.files.dropFirst() {
+                sheet = sheet.replacingOccurrences(of: "\"\(file.to.lastPathComponent)\"",
+                                                   with: "\"\(Self.suffixed(file.to, suffix).lastPathComponent)\"")
+            }
+            try sheet.write(to: cue.from, atomically: true, encoding: .utf8)
+        }
+        for file in item.files {
+            let target = Self.suffixed(file.to, suffix)
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let partial = target.deletingLastPathComponent().appending(path: ".retromac-\(UUID().uuidString).part")
+            if file.move { try fm.moveItem(at: file.from, to: partial) } else { try fm.copyItem(at: file.from, to: partial) }
+            try fm.moveItem(at: partial, to: target)
+        }
+        item.destination = item.destination.map { Self.suffixed($0, suffix) }
+        item.files = []
+        return item
+    }
+
+    static func suffixed(_ url: URL, _ suffix: String) -> URL {
+        guard !suffix.isEmpty else { return url }
+        return url.deletingLastPathComponent()
+            .appending(path: "\(url.deletingPathExtension().lastPathComponent)\(suffix).\(url.pathExtension)")
     }
 
     func existingMatches(_ url: URL, _ sha: String) -> Bool {
@@ -277,7 +414,7 @@ public struct Importer: Sendable {
     }
 
     func candidate(_ source: String, _ status: ImportStatus) -> ImportCandidate {
-        ImportCandidate(id: UUID(), source: source, status: status, destination: nil, staged: nil, sha1: nil)
+        ImportCandidate(id: UUID(), source: source, status: status, destination: nil, staged: nil, sha1: nil, files: [])
     }
 
     func failed(_ source: String, _ reason: String) -> ImportCandidate {
