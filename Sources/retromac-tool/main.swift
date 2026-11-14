@@ -11,6 +11,8 @@ let usage = """
            retromac-tool release-manifest --version X --zip-url URL --sha SHA
            retromac-tool import-dat FILE... [--home DIR]
            retromac-tool update-dats [--home DIR]
+           retromac-tool migrate [--home DIR] [--legacy-applications DIR] [--dry-run]
+           retromac-tool play [--home DIR]
            retromac-tool import-games PATH... [--home DIR] [--library DIR] [--dry-run]
     """
 
@@ -189,6 +191,27 @@ do {
         report.warnings.forEach { print("warning: \($0)") }
     case "import-dat":
         importDats(args)
+    case "migrate":
+        let p = paths(args)
+        let legacy = LegacyPaths(home: p.home, applications: option("--legacy-applications", in: args).map { URL(filePath: $0) }
+            ?? URL(filePath: "/Applications"))
+        let migrator = Migrator(paths: p, legacy: legacy, isRunning: isRunning)
+        let report = args.contains("--dry-run") ? migrator.plan() : try migrator.run()
+        report.moved.forEach { print("move \($0)") }
+        report.leftAlone.forEach { print("leave \($0)") }
+        if !args.contains("--dry-run"), let profile = try? Profile.load(from: p.profile) {
+            let manifest = try Manifest.bundled()
+            let files = ProfileRenderer.render(profile, manifest: manifest, rules: try DisplayRules.bundled(), paths: p)
+            let applied = try Applier(paths: p, apps: manifest.apps.map(\.appName), isRunning: isRunning).apply(files)
+            print("configs: wrote \(applied.written.count), unchanged \(applied.unchanged.count)")
+        }
+    case "play":
+        let p = paths(args)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ESDELauncher.arguments(paths: p)
+        let app: NSRunningApplication = try await NSWorkspace.shared.openApplication(
+            at: p.applications.appending(path: "ES-DE.app"), configuration: configuration)
+        print("ES-DE started (pid \(app.processIdentifier))")
     case "update-dats":
         var failed = false
         for (system, result) in await DatUpdater.update(store: DatStore(paths: paths(args)), downloader: URLSessionDownloader(),

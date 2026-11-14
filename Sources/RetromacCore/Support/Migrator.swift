@@ -60,7 +60,15 @@ public struct Migrator {
         // 1. retromac's own files. Conflicts keep the newer layout's copy; the older one is parked.
         let leftovers = paths.root.appending(path: "Leftovers from ~:retromac")
         if fm.fileExists(atPath: legacy.root.path) {
-            try merge(legacy.root, into: paths.root, label: "~/retromac", leftovers: leftovers, dryRun: dryRun, &report)
+            // Child by child, so a dry run reports the same moves whether or not the root exists yet.
+            for child in try fm.contentsOfDirectory(at: legacy.root, includingPropertiesForKeys: nil) {
+                let name = child.lastPathComponent
+                try merge(child, into: paths.root.appending(path: name), label: "~/retromac/\(name)",
+                          leftovers: leftovers.appending(path: name), dryRun: dryRun, &report)
+            }
+            if !dryRun, (try? fm.contentsOfDirectory(atPath: legacy.root.path))?.isEmpty == true {
+                try? fm.removeItem(at: legacy.root)
+            }
         }
         let state = dryRun ? currentState() : (try? InstallState.load(from: paths.state)) ?? .empty
         let names = appNames()
@@ -99,8 +107,9 @@ public struct Migrator {
         for snapshot in (try? fm.contentsOfDirectory(at: paths.backups, includingPropertiesForKeys: nil)) ?? [] {
             let old = snapshot.appending(path: "ES-DE")
             if fm.fileExists(atPath: old.path) {
+                var internalMoves = MigrationReport()
                 try merge(old, into: snapshot.appending(path: newESDE), label: "backup \(snapshot.lastPathComponent)",
-                          leftovers: snapshot.appending(path: "Leftovers"), dryRun: false, &report)
+                          leftovers: snapshot.appending(path: "Leftovers"), dryRun: false, &internalMoves)
             }
             let created = snapshot.appending(path: BackupStore.createdList)
             if let text = try? String(contentsOf: created, encoding: .utf8) {

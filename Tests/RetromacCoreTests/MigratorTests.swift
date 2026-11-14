@@ -115,3 +115,13 @@ struct LegacyRig {
     #expect(!rig.migrator().isNeeded)
     #expect(try rig.migrator().run() == MigrationReport())
 }
+@Test func planListsWhatRunMovesAndMovesNothing() throws {
+    let rig = try LegacyRig()
+    try rig.buildLegacy()
+    let planned = rig.migrator().plan()
+    #expect(rig.exists(rig.legacy.root.appending(path: "Library/nes/a.nes")))
+    #expect(!rig.exists(rig.paths.root))
+    let ran = try rig.migrator().run()
+    #expect(Set(planned.moved) == Set(ran.moved))
+    #expect(planned.moved.contains("RetroArch.app") && planned.moved.contains("~/ES-DE"))
+}
