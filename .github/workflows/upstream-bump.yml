@@ -6,6 +6,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
+defaults:
+  run:
+    # bash -eo pipefail: without pipefail, `check-upstream | tee` reports tee's exit status
+    # and a failed check would pass silently every week.
+    shell: bash
 jobs:
   bump:
     runs-on: macos-latest
