@@ -10,6 +10,7 @@ let usage = """
            retromac-tool check-upstream [--write] [--manifest FILE]
            retromac-tool release-manifest --version X --zip-url URL --sha SHA
            retromac-tool import-dat FILE... [--home DIR]
+           retromac-tool update-dats [--home DIR]
            retromac-tool import-games PATH... [--home DIR] [--library DIR] [--dry-run]
     """
 
@@ -188,6 +189,16 @@ do {
         report.warnings.forEach { print("warning: \($0)") }
     case "import-dat":
         importDats(args)
+    case "update-dats":
+        var failed = false
+        for (system, result) in await DatUpdater.update(store: DatStore(paths: paths(args)), downloader: URLSessionDownloader(),
+                                                        runner: ProcessRunner()) {
+            switch result {
+            case .success(let dat): print("\(system.rawValue) \(dat.entries.count) games, \(dat.serials.count) serials")
+            case .failure(let error): print("FAIL \(system.rawValue) \(error)"); failed = true
+            }
+        }
+        if failed { exit(1) }
     case "import-games":
         try importGames(args)
     case "check-upstream":
