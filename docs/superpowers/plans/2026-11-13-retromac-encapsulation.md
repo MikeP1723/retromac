@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** retromac becomes the only thing a user sees. Its data, the game library, RetroArch and ES-DE all live in `~/Library/Application Support/retromac`. The app opens to a home screen (Play, Add Games, Settings, Check for Updates), and existing installs are migrated once, automatically.
+**Goal:** retromac becomes the only thing a user sees. It also gets a **Library** screen whose **Import Folder…** scans a whole folder and copies every game it finds into the hidden library (Mike, 2026-11-13). Its data, the game library, RetroArch and ES-DE all live in `~/Library/Application Support/retromac`. The app opens to a home screen (Play, Add Games, Settings, Check for Updates), and existing installs are migrated once, automatically.
 
 **Architecture:**
 - **One root.** `Paths` gets a single root, `~/Library/Application Support/retromac` (`Paths.root`). Everything retromac owns hangs off it: `Apps/` for RetroArch.app and ES-DE.app, `Library/` for games, `ES-DE/` for ES-DE's data, and retromac's own state.
@@ -48,6 +48,7 @@
 3. **A user who already had their own RetroArch, ES-DE or `~/ES-DE`.** Expected: all three are untouched. retromac installs its own copies under `<root>/Apps`. Test in Task 3.
 4. **Restoring a config backup taken before migration.** Expected: it restores into the new ES-DE location and never recreates `~/ES-DE`. Test in Task 3.
 5. **Paths with spaces** (`Application Support`) in ES-DE's find rules and launch arguments. Expected: they work unquoted inside the XML, and are passed as one argument. Tests in Tasks 2 and 5.
+6. **Importing a large collection that won't fit.** Expected: before anything is copied, the import says how much space it needs against how much is free, and copies nothing. Test in Task 5.
 
 ---
 
@@ -173,36 +174,75 @@ Any rename error throws `.moveFailed("<item>: <error>")` right away. Everything 
 
 ---
 
-### Task 5: Home screen, first-run routing and migration screen
+### Task 5: Folder import with progress, summary and space check (core)
 
 **Files:**
-- Create: `Sources/retromac/Views/HomeView.swift`, `Sources/retromac/Views/MigrationView.swift`
-- Modify: `Sources/retromac/RetromacApp.swift`, `Sources/retromac/WizardModel.swift` (remove `.library`; the steps become display, systems, controllers, apply), `Sources/retromac/Views/LibraryStep.swift` (deleted), `Sources/retromac/GamesModel.swift` (the library root is always `paths.defaultLibraryRoot`)
+- Modify: `Sources/RetromacCore/Library/Importer.swift`
+- Test: `Tests/RetromacCoreTests/ImportFolderTests.swift`
 
 **Interfaces:**
 - Produces:
-  - `enum Screen { case migrating, wizard, home, games }` on a new `@Observable AppModel`, which owns `WizardModel`, `UpdateModel` and `GamesModel`.
+  - `Importer.analyze(_ urls:, reusing:, progress: (@Sendable (_ scanned: Int, _ total: Int) -> Void)? = nil)`. `total` is counted with one quick directory walk before scanning starts. `progress` is called after each file, and members of an archive count as they're processed.
+  - `struct ImportSummary: Equatable, Sendable { var identified: Int; var unverified: Int; var unidentified: Int; var duplicates: Int; var skipped: Int; var failed: Int; var bytesToCopy: Int64; var bySystem: [SystemID: Int] }` and `static func summarize(_ candidates: [ImportCandidate]) -> ImportSummary`.
+    - `skipped` counts not-a-game items.
+    - `bytesToCopy` totals the sizes of every file commit would write.
+    - `bySystem` counts identified and unverified items.
+  - `enum ImportError: Error, Equatable { case notEnoughSpace(needed: Int64, free: Int64) }`. `commit` checks `bytesToCopy` plus 512 MiB against `freeSpace(libraryRoot or its nearest existing parent)` **before copying anything**, and throws `.notEnoughSpace` if it won't fit. Files moved out of the session dir don't count, since they need no new space.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `progressReportsEveryFile`: 5 files in a folder → the progress calls end at `(5, 5)`, and `scanned` never decreases.
+  - `summaryCountsByStatusAndSystem`: identified/unverified/duplicate/notAGame fixtures → exact counts, and `bySystem[.nes] == 2`.
+  - `bytesToCopyExcludesSessionMoves`: a zipped game plus a loose game → `bytesToCopy` equals the loose game's size only.
+  - `commitRefusesWhenItWontFit`: `freeSpace: { _ in 1024 }` → throws `.notEnoughSpace(needed:, free: 1024)`, and the library doesn't exist afterwards.
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run `swift test`.** Expected: all pass.
+- [ ] **Step 5: Commit:** `feat: folder import progress, summary and free-space check`
+
+---
+
+### Task 6: Home screen, Library screen, first-run routing and migration screen
+
+**Files:**
+- Create: `Sources/retromac/Views/HomeView.swift`, `Sources/retromac/Views/LibraryView.swift`, `Sources/retromac/Views/MigrationView.swift`
+- Modify:
+  - `Sources/retromac/RetromacApp.swift`
+  - `Sources/retromac/WizardModel.swift`: remove `.library` and `.games`. The steps become display, systems, controllers, apply.
+  - `Sources/retromac/GamesModel.swift`: the library root is always `paths.defaultLibraryRoot`. It also gains `importFolder(_ url: URL) async` and `var scanProgress: (Int, Int)?`, plus `var summary: ImportSummary?`.
+  - `Sources/retromac/Views/GamesStep.swift`: becomes the body of `LibraryView`.
+  - Delete `Sources/retromac/Views/LibraryStep.swift`.
+
+**Interfaces:**
+- Produces:
+  - `enum Screen { case migrating, wizard, home, library }` on a new `@Observable AppModel`, which owns `WizardModel`, `UpdateModel` and `GamesModel`.
   - **Routing at launch:**
     - `Migrator.isNeeded` → `.migrating`.
     - Otherwise, if `profile.json` exists and `state.apps["esde"] != nil` → `.home`.
     - Otherwise → `.wizard`.
   - **MigrationView:** "Updating retromac's files…" while it runs. On `.appRunning`, it shows "Quit ES-DE to finish updating retromac." with a **Try Again** button. On `.moveFailed`, it shows the reason with **Try Again**. On success it applies the configs, then goes to `.home`.
   - **HomeView**, a centered column:
-    - **Play**: a large, prominent button. Disabled with a tooltip until ES-DE is installed.
-    - **Add Games**: goes to `.games`, the existing `GamesStep`, with a **Back** button.
+    - **Play**: a large, prominent button, disabled until ES-DE is installed.
+    - **Library**: goes to `.library`.
     - **Settings**: goes to `.wizard`, starting at Display.
     - **Check for Updates**: opens the existing sheet.
-    - A footer: "<N> games · <size>" from a background scan of `Library/`, plus a **Show Games in Finder** link (`NSWorkspace.activateFileViewerSelecting`).
+    - A footer: "<N> games · <size>" from a background scan of `Library/`, plus a **Show Games in Finder** link.
     - The Updates-available banner, as now.
+  - **LibraryView**, with a **Back** button to home:
+    - **Top:** per-system game counts from `Library/<system>`, and the storage used.
+    - **Primary action:** **Import Folder…**, an `NSOpenPanel` that chooses a directory. The drop zone and **Choose Files…** stay as secondary ways to add games.
+    - **While scanning:** "Scanning 340 of 1,240 files…" with a determinate progress bar and **Cancel**.
+    - **After scanning:** a summary card, e.g. "1,100 games found in the databases · 90 not in a database · 50 skipped · 12 already in your library · 3.2 GB to copy". It has a **Show details** disclosure for the existing candidate list, and one **Import All** button.
+    - **Not enough space:** "Not enough space: needs 3.2 GB, 1.1 GB free." Nothing is copied.
+    - **When finished:** "Imported 1,190 games. Click Play to start." The game databases section moves to a small **Game Databases** disclosure at the bottom, with **Update** and the import fallback.
   - **Wizard:** finishing Install & Apply goes to `.home`. "Done" becomes **Continue** on the last step.
 
 - [ ] **Step 1: Implement.**
 - [ ] **Step 2: Run `swift build && swift test`, then `scripts/bundle.sh` and `codesign --verify --strict build/retromac.app`.** Expected: success.
-- [ ] **Step 3: Commit:** `feat: home screen, first-run routing and migration screen`
+- [ ] **Step 3: Commit:** `feat: home and Library screens, folder import, first-run routing, migration screen`
 
 ---
 
-### Task 6: End-to-end on Mike's Mac
+### Task 7: End-to-end on Mike's Mac
 
 These steps move Mike's real install. **Confirm with Mike before Step 2.**
 
@@ -214,5 +254,5 @@ These steps move Mike's real install. **Confirm with Mike before Step 2.**
   - `~/Library/Application Support/retromac` has `Apps/`, `Library/` (with the same shas) and `ES-DE/`.
   - ES-DE's `es_settings.xml` ROMDirectory points to the new Library.
 - [ ] **Step 4: Mike clicks Play.** Expected: ES-DE opens full screen, lists his NES game, and launches it in RetroArch.
-- [ ] **Step 5: Mike runs Add Games and Update Game Databases from the home screen.** This is the deferred 3a-2 hands-on test: SMB3 → `Super Mario Bros 3 (USA) (PRG 1) [Hack]`, or already present.
+- [ ] **Step 5: Mike opens Library, updates the game databases, and runs Import Folder… on a folder of games** (at least `~/Downloads` with the SMB3 zip). Expected: progress, then a summary, then Import All. SMB3 shows as `Super Mario Bros 3 (USA) (PRG 1) [Hack]` or "already in your library", and non-game files in the folder are counted as skipped. This also covers the deferred 3a-2 hands-on test.
 - [ ] **Step 6: Report the results to Mike.**
