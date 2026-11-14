@@ -138,7 +138,6 @@ final class UpdateModel {
             return
         }
         busy = true
-        defer { busy = false }
         do {
             let dir = FileManager.default.temporaryDirectory.appending(path: "retromac-self-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -150,8 +149,11 @@ final class UpdateModel {
             process.executableURL = URL(filePath: "/bin/sh")
             process.arguments = ["-c", script]
             try process.run()
-            NSApplication.shared.terminate(nil)
+            // Exit directly: NSApplication.terminate is vetoed while a sheet is attached (this one
+            // is), which left the swap script waiting forever. Nothing needs saving at this point.
+            exit(0)
         } catch {
+            busy = false
             log.append("Self-update failed: \(error)")
         }
     }
