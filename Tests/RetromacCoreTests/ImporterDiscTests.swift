@@ -103,3 +103,19 @@ extension ImportRig {
     }.value
     #expect(count == 0)
 }
+@Test func cueCannotReachOutsideItsFolder() throws {
+    let rig = try ImportRig()
+    let victim = try rig.drop("victim.bin", Data("keep me".utf8))
+    // From <session>/<extracted>/ two levels up is $TMPDIR, where the test folder lives.
+    let escape = "../../\(rig.dir.lastPathComponent)/drops/victim.bin"
+    let src = rig.dir.appending(path: "zipsrc")
+    _ = try isoImage(src.appending(path: "Track 1.bin"), systemCNF: "BOOT = cdrom:\\SCUS_941.63;1\n", raw: true, size: 1 << 20)
+    try write("FILE \"Track 1.bin\" BINARY\n  TRACK 01 MODE2/2352\nFILE \"\(escape)\" BINARY\n  TRACK 02 AUDIO\n",
+              to: src.appending(path: "Evil.cue"))
+    let zip = rig.drops.appending(path: "evil.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", src.path, "Evil.cue", "Track 1.bin"])
+    let (session, candidates) = try rig.importer.analyze([zip])
+    #expect(candidates.map(\.status) == [.failed("the .cue refers to a file outside its folder: \(escape)")])
+    _ = try rig.importer.commit(session, candidates)
+    #expect(try read(victim) == "keep me")
+}

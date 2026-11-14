@@ -220,13 +220,23 @@ public struct Importer: Sendable {
         let name = RomSniffer.sanitize(entry?.name ?? NameCleaner.clean(stem, headerTitle: id.title))
         let folder = libraryRoot.appending(path: system.rawValue)
         let ext = file.pathExtension.lowercased()
-        let inSession = file.standardizedFileURL.path.hasPrefix(state.session.dir.standardizedFileURL.path)
+        let sessionRoot = state.session.dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        /// Only files retromac itself unpacked into the session dir are ever moved.
+        func movable(_ url: URL) -> Bool { url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(sessionRoot) }
         var item = candidate(source, entry.map { .identified(system, name: $0.name) } ?? .unverified(system))
         let destination = folder.appending(path: "\(name).\(ext)")
         item.destination = destination
 
         if ext == "cue" {
             let tracks = DiscSniffer.cueFiles(file)
+            // A cue may only name files beside it: no "../", absolute paths or symlinks out of its folder.
+            let cueFolder = file.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+            if let outside = tracks.first(where: {
+                $0.url.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent().path != cueFolder
+            }) {
+                state.candidates.append(failed(source, "the .cue refers to a file outside its folder: \(outside.name)"))
+                return
+            }
             if let missing = tracks.first(where: { !FileManager.default.fileExists(atPath: $0.url.path) }) {
                 state.candidates.append(failed(source, "the .cue refers to a missing file: \(missing.name)"))
                 return
@@ -242,9 +252,9 @@ public struct Importer: Sendable {
                 return
             }
             item.files = [FileCopy(from: staged, to: destination, move: true)]
-                + zip(tracks, names).map { FileCopy(from: $0.url, to: folder.appending(path: $1), move: inSession) }
+                + zip(tracks, names).map { FileCopy(from: $0.url, to: folder.appending(path: $1), move: movable($0.url)) }
         } else {
-            item.files = [FileCopy(from: file, to: destination, move: inSession)]
+            item.files = [FileCopy(from: file, to: destination, move: movable(file))]
         }
 
         let key = id.serial.map { "\(system.rawValue):\(SerialKey.normalize($0))" }
