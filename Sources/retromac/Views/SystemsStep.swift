@@ -37,6 +37,13 @@ struct SystemsStep: View {
                 : "BIOS found for: \(regions)"
         case .saturn:
             return regions.isEmpty ? "Needs your Saturn's BIOS file to play. Add it in Games like any game file." : "BIOS found for: \(regions)"
+        case .xbox:
+            let missing = BiosStatus.missing(.xbox, in: model.paths.retroarchSystem)
+            switch missing.count {
+            case 0: return "BIOS found."
+            case 1: return "Still needs \(missing[0])."
+            default: return "Needs your Xbox's MCPX boot ROM (mcpx_1.0.bin) and BIOS (Complex_4627.bin). Add them in Games like any game file."
+            }
         default:
             return nil
         }
