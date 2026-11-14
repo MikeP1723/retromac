@@ -33,6 +33,8 @@ public struct Paths: Sendable {
     public var retroarchCores: URL { retroarchSupport.appending(path: "cores") }
     /// BIOS files; set explicitly in retroarch.cfg, whose default is each game's own folder.
     public var retroarchSystem: URL { retroarchSupport.appending(path: "system") }
+    /// RetroArch's own default for saves, states and playlists; retromac moves them out (RetroArchDocuments).
+    public var retroarchDocuments: URL { home.appending(path: "Documents/RetroArch") }
     public var globalShaderPreset: URL { retroarchSupport.appending(path: "config/global.slangp") }
     public var retroarchShadersSlang: URL { retroarchSupport.appending(path: "shaders/shaders_slang") }
 
