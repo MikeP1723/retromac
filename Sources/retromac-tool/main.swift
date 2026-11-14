@@ -9,7 +9,63 @@ let usage = """
            retromac-tool apply --profile FILE [--home DIR]
            retromac-tool check-upstream [--write] [--manifest FILE]
            retromac-tool release-manifest --version X --zip-url URL --sha SHA
+           retromac-tool import-dat FILE... [--home DIR]
+           retromac-tool update-dats [--home DIR]
+           retromac-tool migrate [--home DIR] [--legacy-applications DIR] [--dry-run]
+           retromac-tool play [--home DIR]
+           retromac-tool import-games PATH... [--home DIR] [--library DIR] [--dry-run]
     """
+
+/// Positional arguments after the subcommand, skipping options and their values.
+func positional(_ args: [String], valued: Set<String>) -> [String] {
+    var out: [String] = [], skip = false
+    for arg in args.dropFirst() {
+        if skip { skip = false; continue }
+        if valued.contains(arg) { skip = true; continue }
+        if arg.hasPrefix("--") { continue }
+        out.append(arg)
+    }
+    return out
+}
+
+func importDats(_ args: [String]) {
+    let store = DatStore(paths: paths(args))
+    var failed = false
+    for file in positional(args, valued: ["--home"]) {
+        do {
+            for outcome in try store.importDats([URL(filePath: file)], runner: ProcessRunner()) {
+                switch outcome {
+                case .imported(let dat): print("\(dat.system.rawValue) \(dat.source) \(dat.version) \(dat.entries.count) games")
+                case .skipped(let name, let reason): print("skip \(name) \(reason)")
+                }
+            }
+        } catch {
+            print("FAIL \(file) \(error)")
+            failed = true
+        }
+    }
+    if failed { exit(1) }
+}
+
+func importGames(_ args: [String]) throws {
+    let p = paths(args)
+    let library = option("--library", in: args).map { URL(filePath: $0) }
+        ?? (try? Profile.load(from: p.profile))?.libraryRoot ?? p.defaultLibraryRoot
+    let importer = Importer(libraryRoot: library, dats: DatStore(paths: p), runner: ProcessRunner())
+    let (session, candidates) = try importer.analyze(positional(args, valued: ["--home", "--library"]).map { URL(filePath: $0) })
+    let results = args.contains("--dry-run") ? candidates : try importer.commit(session, candidates)
+    for item in results {
+        let file = item.destination?.lastPathComponent ?? ""
+        switch item.status {
+        case .identified(let system, let name): print("identified \(system.rawValue) \(name)")
+        case .unverified(let system): print("unverified \(system.rawValue) \(file)")
+        case .duplicate(let system): print("duplicate \(system?.rawValue ?? "_Unidentified") \(file)")
+        case .unidentified(let reason): print("unidentified \(reason) \(item.source)")
+        case .notAGame: print("skip \(item.source)")
+        case .failed(let reason): print("FAIL \(item.source) \(reason)")
+        }
+    }
+}
 
 let defaultManifestPath = "Sources/RetromacCore/Resources/manifest.json"
 
@@ -67,7 +123,7 @@ func option(_ name: String, in args: [String]) -> String? {
 
 func paths(_ args: [String]) -> Paths {
     let home = option("--home", in: args).map { URL(filePath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser
-    let apps = option("--applications", in: args).map { URL(filePath: $0) } ?? URL(filePath: "/Applications")
+    let apps = option("--applications", in: args).map { URL(filePath: $0) }
     return Paths(home: home, applications: apps)
 }
 
@@ -133,6 +189,41 @@ do {
         print("installed: \(report.installed.joined(separator: ", "))")
         print("skipped: \(report.skipped.joined(separator: ", "))")
         report.warnings.forEach { print("warning: \($0)") }
+    case "import-dat":
+        importDats(args)
+    case "migrate":
+        let p = paths(args)
+        let legacy = LegacyPaths(home: p.home, applications: option("--legacy-applications", in: args).map { URL(filePath: $0) }
+            ?? URL(filePath: "/Applications"))
+        let migrator = Migrator(paths: p, legacy: legacy, isRunning: isRunning)
+        let report = args.contains("--dry-run") ? migrator.plan() : try migrator.run()
+        report.moved.forEach { print("move \($0)") }
+        report.leftAlone.forEach { print("leave \($0)") }
+        if !args.contains("--dry-run"), let profile = try? Profile.load(from: p.profile) {
+            let manifest = try Manifest.bundled()
+            let files = ProfileRenderer.render(profile, manifest: manifest, rules: try DisplayRules.bundled(), paths: p)
+            let applied = try Applier(paths: p, apps: manifest.apps.map(\.appName), isRunning: isRunning).apply(files)
+            print("configs: wrote \(applied.written.count), unchanged \(applied.unchanged.count)")
+        }
+    case "play":
+        let p = paths(args)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ESDELauncher.arguments(paths: p)
+        let app: NSRunningApplication = try await NSWorkspace.shared.openApplication(
+            at: p.applications.appending(path: "ES-DE.app"), configuration: configuration)
+        print("ES-DE started (pid \(app.processIdentifier))")
+    case "update-dats":
+        var failed = false
+        for (system, result) in await DatUpdater.update(store: DatStore(paths: paths(args)), downloader: URLSessionDownloader(),
+                                                        runner: ProcessRunner()) {
+            switch result {
+            case .success(let dat): print("\(system.rawValue) \(dat.entries.count) games, \(dat.serials.count) serials")
+            case .failure(let error): print("FAIL \(system.rawValue) \(error)"); failed = true
+            }
+        }
+        if failed { exit(1) }
+    case "import-games":
+        try importGames(args)
     case "check-upstream":
         try await checkUpstream(args)
     case "release-manifest":

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import RetromacCore
 
-func profile(_ display: DisplayProfile = tv65_4k, look: Look = .crt, systems: Set<SystemID> = Set(SystemID.allCases),
+func profile(_ display: DisplayProfile = tv65_4k, look: Look = .crt, systems: Set<SystemID> = Set(SystemID.allCases.filter(\.isCartridge)),
              controllers: [ControllerProfile] = [.init(deviceName: "Xbox Wireless Controller", kind: .xbox)],
              library: URL = URL(filePath: "/tmp/h/retromac/Library")) -> Profile {
     Profile(display: display, look: look, systems: systems, controllers: controllers, facePolicy: .position, libraryRoot: library)

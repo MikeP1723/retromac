@@ -7,14 +7,13 @@ import RetromacCore
 @Observable @MainActor
 final class WizardModel {
     enum Step: Int, CaseIterable {
-        case display, systems, controllers, library, apply
+        case display, systems, controllers, apply
 
         var title: String {
             switch self {
             case .display: "Display"
             case .systems: "Systems"
             case .controllers: "Controllers"
-            case .library: "Library"
             case .apply: "Install"
             }
         }
@@ -28,6 +27,8 @@ final class WizardModel {
     var applied = false
     var backups: [URL] = []
     var loadError: String?
+    /// Shown above the steps when retromac sends the user here to finish something.
+    var notice: String?
 
     let paths = Paths(home: FileManager.default.homeDirectoryForCurrentUser)
     private let manifest: Manifest?
@@ -41,16 +42,7 @@ final class WizardModel {
         rules = Self.load("display rules", into: &errors) { try DisplayRules.bundled() }
         loadError = errors.isEmpty ? nil : errors.joined(separator: "\n")
 
-        if var saved = try? Profile.load(from: paths.profile) {
-            // Re-detect the screen, keeping the size and distance only the user knows.
-            saved.display = DisplayDetector.detect(diagonalInches: saved.display.diagonalInches,
-                                                   distanceInches: saved.display.distanceInches)
-            profile = saved
-        } else {
-            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set(SystemID.allCases),
-                              controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
-        }
-        profile.controllers = ControllerDetector.detect()
+        profile = Self.loadProfile(paths)
         backups = (try? BackupStore(root: paths.backups, home: paths.home).list()) ?? []
 
         for name in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect] {
@@ -58,6 +50,41 @@ final class WizardModel {
                 MainActor.assumeIsolated { self?.profile.controllers = ControllerDetector.detect() }
             })
         }
+    }
+
+    /// The saved profile with the screen and controllers re-detected, or a new one. The library always
+    /// lives under retromac's own folder.
+    static func loadProfile(_ paths: Paths) -> Profile {
+        var profile: Profile
+        if var saved = try? Profile.load(from: paths.profile) {
+            // Re-detect the screen, keeping the size and distance only the user knows.
+            saved.display = DisplayDetector.detect(diagonalInches: saved.display.diagonalInches,
+                                                   distanceInches: saved.display.distanceInches)
+            profile = saved
+        } else {
+            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.installableSystems ?? []),
+                              controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
+        }
+        // A library kept on another disk (see Migrator) stays where it is; anything else lives under retromac.
+        if !FileManager.default.fileExists(atPath: profile.libraryRoot.path)
+            || profile.libraryRoot.path.hasPrefix(LegacyPaths(home: paths.home).root.path + "/") {
+            profile.libraryRoot = paths.defaultLibraryRoot
+        }
+        profile.controllers = ControllerDetector.detect()
+        return profile
+    }
+
+    /// After a migration moved the profile into place.
+    func reloadProfile() {
+        profile = Self.loadProfile(paths)
+        backups = (try? BackupStore(root: paths.backups, home: paths.home).list()) ?? []
+    }
+
+    /// Re-renders and applies configs without installing anything (after a migration).
+    func applyConfigs() throws {
+        guard let manifest, let rules else { return }
+        let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
+        _ = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
     }
 
     private static func load<T>(_ what: String, into errors: inout [String], _ body: () throws -> T) -> T? {
@@ -96,6 +123,7 @@ final class WizardModel {
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
             log.append("Done.")
             applied = true
+            notice = nil
         } catch ApplyError.appRunning(let app) {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
@@ -104,7 +132,9 @@ final class WizardModel {
     }
 
     func openESDE() {
-        NSWorkspace.shared.open(paths.applications.appending(path: "ES-DE.app"))
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = ESDELauncher.arguments(paths: paths)
+        NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration)
     }
 
     func restore(_ snapshot: URL) {

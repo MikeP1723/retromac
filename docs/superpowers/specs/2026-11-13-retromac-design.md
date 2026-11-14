@@ -179,7 +179,7 @@ For each file:
    - Wii U, Xbox, and Switch files are left in their formats.
 6. **BIOS:** match against the known-BIOS hash table for Saturn, PS1, PS2, and Xbox (MCPX, flash), and copy each file to its emulator's directory. The app shows status per system.
 7. **File** to `Library/<system>/<Canonical Name>.<ext>`, then rescan ES-DE.
-8. **No match:** move to `_Unidentified/` with a reason sidecar. Encrypted Wii U disc images and anything that would need keys land here.
+8. **No match:** move to `_Unidentified/` with a reason sidecar. Per decision 7, Wii U `.wud`/`.wux` images are filed under Wii U by their container rather than set aside. Nothing that needs keys is ever read.
 
 Files are copied, the hash is verified, and only then is the original removed. A SQLite journal lets a crashed ingest resume. Converting a 4 GB disc image to CHD or RVZ takes minutes, so conversions run through a bounded queue and show progress in the app.
 
@@ -262,6 +262,31 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
 1. **Switch is detect-and-configure only.** retromac never downloads a Switch emulator and never handles keys or firmware.
 2. **PS2 uses official PCSX2 under Rosetta** until an official arm64 build ships. ARMSX2 stays a possible one-line manifest swap later.
 3. **Cores trust the libretro host** (decided during Phase 1, 2026-11-13). libretro publishes macOS cores only at a mutable `nightly/…/latest/` URL. Apps stay sha-pinned. Cores may omit `sha256` only when hosted on `buildbot.libretro.com`, and the actual sha is recorded in `state.json` on install.
+4. **CHD conversion is optional** (Mike, 2026-11-13). Disc images stay `.cue`/`.bin` by default, which the cores play. If Homebrew is present, the wizard offers to convert discs to CHD and installs `rom-tools` (chdman, GPL-2.0-or-later) through `brew`. Without Homebrew, everything still works. MAME publishes no macOS chdman of its own.
+5. **Phase 3 is split into three plans:**
+   - 3a: the Importer, No-Intro DAT import and the drag-and-drop Games step, for cartridge systems.
+   - 3b: disc systems (Saturn, PS1), Redump DATs, multi-disc `.m3u`, BIOS detection and optional CHD.
+   - 3c: the inbox watcher LaunchAgent.
+6. **Game databases are fetched from libretro-database** (Mike, 2026-11-13; this replaces the earlier "user imports No-Intro DATs").
+   - A one-click **Update game databases** downloads the No-Intro and Redump DATs (clrmamepro format) from `raw.githubusercontent.com/libretro/libretro-database` at runtime.
+   - They're never bundled in retromac, and manual import stays available.
+   - Redump entries carry serials, which disc games are matched by.
+7. **The importer recognizes every console on the list now** (Mike, 2026-11-13), even before that console's emulator ships.
+   - **Systems recognized:** NES, SNES, Genesis, N64, PS1, PS2, Saturn, GameCube, Wii, Xbox, Wii U and Switch.
+   - **Files:** they're filed into ES-DE-named folders and wait there until a later phase installs the emulator.
+   - **How they're identified:**
+     - Cartridges by hash.
+     - Disc systems by serial or game ID read from a few header sectors, never a full-image hash.
+     - Wii U and Switch by their container headers, named from the filename (their metadata is encrypted).
+   - **Games not in a database** (hacks, translations, homebrew) get a clean name from the filename, with GoodTools tags translated, e.g. "(U)" becomes "(USA)" and "[h2]" becomes "[Hack]".
+8. **Fully encapsulated, for non-technical users** (Mike, 2026-11-13). This replaces `~/retromac` and the `/Applications` installs.
+   - **One visible app.** retromac's data, the game library, RetroArch and ES-DE all live under `~/Library/Application Support/retromac`. Nothing else appears in the home folder or `/Applications`.
+   - **Games are managed in the app:** drag and drop, plus a **Show Games in Finder** button and a storage readout.
+   - **After first setup, retromac opens to a home screen:** **Play** (launches ES-DE full screen), **Add Games**, **Settings** (the setup steps again) and **Check for Updates**.
+   - **ES-DE system commands use the absolute RetroArch path,** since ES-DE's default find rules expect `/Applications`.
+   - **Existing installs are migrated once.**
+   - **Licensing is unchanged:** emulators are still downloaded from upstream at runtime and never bundled.
+   - **Scheduling:** planned as its own phase, right after 3a-2 merges.
 
 ## Findings from Phase 1 verification
 
