@@ -50,6 +50,8 @@ public struct Paths: Sendable {
         retroarchSupport.appending(path: "config/remaps/\(libraryName)/\(libraryName).rmp")
     }
 
+    /// Dolphin's user folder on macOS (its default; retromac doesn't move it).
+    public var dolphinConfig: URL { home.appending(path: "Library/Application Support/Dolphin/Config") }
     /// xemu's own folder (`SDL_GetPrefPath("xemu", "xemu")` is `xemu/xemu` inside it).
     public var xemuSupport: URL { home.appending(path: "Library/Application Support/xemu") }
     /// The emulated Xbox's hard disk; it holds game saves, so it's installed once and never replaced.

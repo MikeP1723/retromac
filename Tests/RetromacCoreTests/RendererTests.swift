@@ -10,7 +10,8 @@ func profile(_ display: DisplayProfile = tv65_4k, look: Look = .crt, systems: Se
 }
 
 func render(_ p: Profile, home: String = "/tmp/h") throws -> [RenderedFile] {
-    ProfileRenderer.render(p, manifest: .fixture(), rules: try DisplayRules.bundled(), paths: Paths(home: URL(filePath: home)))
+    // A fixed chip, so CI's base-M1 runners don't hit the base-chip resolution cap.
+    ProfileRenderer.render(p, manifest: .fixture(), rules: try DisplayRules.bundled(), paths: Paths(home: URL(filePath: home)), chip: "Apple M4 Pro")
 }
 
 func retroarchKeys(_ files: [RenderedFile]) -> [String: String] {

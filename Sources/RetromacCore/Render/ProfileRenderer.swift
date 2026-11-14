@@ -9,6 +9,8 @@ public struct RenderedFile: Equatable, Sendable {
         case esdeSettings(romDirectory: String)
         /// ES-DE custom systems: these <system> entries replace same-named ones; others are kept.
         case esdeSystems(String)
+        /// Keys (section → key → value) merged into an INI file; every other line is kept.
+        case iniKeys([String: [String: String]])
         /// A file retromac owns entirely.
         case whole(String)
         case directory
@@ -26,7 +28,8 @@ public struct RenderedFile: Equatable, Sendable {
 public enum ProfileRenderer {
     static let header = "# Managed by retromac — edits will be overwritten\n"
 
-    public static func render(_ p: Profile, manifest: Manifest, rules: DisplayRules, paths: Paths) -> [RenderedFile] {
+    public static func render(_ p: Profile, manifest: Manifest, rules: DisplayRules, paths: Paths,
+                              chip: String = Chip.brand()) -> [RenderedFile] {
         let preset = rules.shaderPreset(for: p.display, look: p.look)
         var files: [RenderedFile] = []
 
@@ -83,6 +86,8 @@ public enum ProfileRenderer {
                 "input_libretro_device_p2": "517",
             ])))
         }
+
+        files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
         files.append(RenderedFile(url: paths.esdeFindRules,
