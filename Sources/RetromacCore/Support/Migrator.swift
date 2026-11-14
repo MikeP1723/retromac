@@ -73,7 +73,20 @@ public struct Migrator: Sendable {
         let state = dryRun ? currentState() : (try? InstallState.load(from: paths.state)) ?? .empty
         let names = appNames()
 
-        // 2. Apps retromac installed. The user's own copies stay where they are.
+        // 2. ES-DE's data, only when retromac installed ES-DE. Data moves before apps, so a blocked
+        //    app move never strands it.
+        if fm.fileExists(atPath: legacy.esde.path) {
+            if state.apps["esde"]?.managed == true {
+                try merge(legacy.esde, into: paths.esdeRoot, label: "~/ES-DE",
+                          leftovers: paths.root.appending(path: "Leftovers from ~:ES-DE"), dryRun: dryRun, &report)
+            } else {
+                report.leftAlone.append("~/ES-DE (yours)")
+            }
+        }
+
+        // 3. Apps retromac installed. The user's own copies stay where they are. macOS can refuse to
+        //    move another developer's app out of /Applications (App Management); that copy is left and
+        //    retromac installs a fresh one into its own folder instead.
         for (id, app) in state.apps.sorted(by: { $0.key < $1.key }) {
             guard let name = names[id] else { continue }
             let source = legacy.applications.appending(path: name)
@@ -87,17 +100,12 @@ public struct Migrator: Sendable {
                 report.leftAlone.append(name)
                 continue
             }
-            if !dryRun { try move(source, to: target, label: name) }
-            report.moved.append(name)
-        }
-
-        // 3. ES-DE's data, only when retromac installed ES-DE.
-        if fm.fileExists(atPath: legacy.esde.path) {
-            if state.apps["esde"]?.managed == true {
-                try merge(legacy.esde, into: paths.esdeRoot, label: "~/ES-DE",
-                          leftovers: paths.root.appending(path: "Leftovers from ~:ES-DE"), dryRun: dryRun, &report)
+            if dryRun {
+                report.moved.append(name)
+            } else if (try? move(source, to: target, label: name)) != nil {
+                report.moved.append(name)
             } else {
-                report.leftAlone.append("~/ES-DE (yours)")
+                report.leftAlone.append("\(name) (couldn't move — retromac will install a fresh copy)")
             }
         }
         guard !dryRun else { return }
@@ -120,14 +128,45 @@ public struct Migrator: Sendable {
             }
         }
 
-        // 5. The library now always lives under the root.
-        if var profile = try? Profile.load(from: paths.profile),
-           profile.libraryRoot.standardizedFileURL.path == legacy.root.appending(path: "Library").standardizedFileURL.path {
-            profile.libraryRoot = paths.defaultLibraryRoot
-            try profile.save(to: paths.profile)
+        // 5. The library lives under the root. A folder the user picked earlier moves in when it's on the
+        //    same disk; one on another disk (an external drive) keeps being used where it is.
+        var oldLibraries = [legacy.root.appending(path: "Library").standardizedFileURL.path]
+        if var profile = try? Profile.load(from: paths.profile) {
+            let chosen = profile.libraryRoot.standardizedFileURL
+            if chosen.path != paths.defaultLibraryRoot.standardizedFileURL.path {
+                if fm.fileExists(atPath: chosen.path), chosen.path != oldLibraries[0] {
+                    if sameVolume(chosen, paths.root) {
+                        try merge(chosen, into: paths.defaultLibraryRoot, label: "your game folder",
+                                  leftovers: paths.root.appending(path: "Leftovers from \(chosen.lastPathComponent)"), dryRun: false, &report)
+                        oldLibraries.append(chosen.path)
+                        profile.libraryRoot = paths.defaultLibraryRoot
+                    }
+                } else {
+                    profile.libraryRoot = paths.defaultLibraryRoot
+                }
+                try profile.save(to: paths.profile)
+            }
+        }
+        let library = ((try? Profile.load(from: paths.profile))?.libraryRoot ?? paths.defaultLibraryRoot).path
+
+        // 6. ES-DE points at the moved library and finds RetroArch in its new place before any config
+        //    apply (and its backup snapshot) happens, including inside older snapshots.
+        if fm.fileExists(atPath: paths.esdeRoot.path) {
+            var settings = [paths.esdeSettings]
+            for snapshot in (try? fm.contentsOfDirectory(at: paths.backups, includingPropertiesForKeys: nil)) ?? [] {
+                settings.append(snapshot.appending(path: "Library/Application Support/retromac/ES-DE/settings/es_settings.xml"))
+            }
+            for file in settings {
+                guard let text = try? String(contentsOf: file, encoding: .utf8),
+                      oldLibraries.contains(where: { text.contains("value=\"\(ESDESettings.xmlEscape($0))\"") }) else { continue }
+                try ESDESettings.merge(existing: text, romDirectory: library).write(to: file, atomically: true, encoding: .utf8)
+            }
+            try create(paths.esdeFindRules.deletingLastPathComponent())
+            try ESDESystems.findRules(retroarch: paths.retroarchExecutable, cores: paths.retroarchCores)
+                .write(to: paths.esdeFindRules, atomically: true, encoding: .utf8)
         }
 
-        // 6. Last, so an interrupted run still counts as needed.
+        // 7. Last, so an interrupted run still counts as needed.
         var final = (try? InstallState.load(from: paths.state)) ?? .empty
         final.layoutVersion = Self.layoutVersion
         try final.save(to: paths.state)
@@ -172,6 +211,15 @@ public struct Migrator: Sendable {
         } catch {
             throw MigrationError.moveFailed("\(dir.lastPathComponent): \(error.localizedDescription)")
         }
+    }
+
+    private func sameVolume(_ a: URL, _ b: URL) -> Bool {
+        let volume = { (url: URL) -> String? in
+            var probe = url
+            while !fm.fileExists(atPath: probe.path), probe.pathComponents.count > 1 { probe.deleteLastPathComponent() }
+            return (try? probe.resourceValues(forKeys: [.volumeIdentifierKey]).volumeIdentifier).map { "\($0)" }
+        }
+        return volume(a) != nil && volume(a) == volume(b)
     }
 
     private func isDirectory(_ url: URL) -> Bool {

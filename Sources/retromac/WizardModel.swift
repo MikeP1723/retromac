@@ -27,6 +27,8 @@ final class WizardModel {
     var applied = false
     var backups: [URL] = []
     var loadError: String?
+    /// Shown above the steps when retromac sends the user here to finish something.
+    var notice: String?
 
     let paths = Paths(home: FileManager.default.homeDirectoryForCurrentUser)
     private let manifest: Manifest?
@@ -63,7 +65,11 @@ final class WizardModel {
             profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.installableSystems ?? []),
                               controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
         }
-        profile.libraryRoot = paths.defaultLibraryRoot
+        // A library kept on another disk (see Migrator) stays where it is; anything else lives under retromac.
+        if !FileManager.default.fileExists(atPath: profile.libraryRoot.path)
+            || profile.libraryRoot.path.hasPrefix(LegacyPaths(home: paths.home).root.path + "/") {
+            profile.libraryRoot = paths.defaultLibraryRoot
+        }
         profile.controllers = ControllerDetector.detect()
         return profile
     }
@@ -117,6 +123,7 @@ final class WizardModel {
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
             log.append("Done.")
             applied = true
+            notice = nil
         } catch ApplyError.appRunning(let app) {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {

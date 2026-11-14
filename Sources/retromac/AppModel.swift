@@ -24,11 +24,32 @@ final class AppModel {
         let paths = wizard.paths
         self.wizard = wizard
         updates = UpdateModel(paths: paths, profile: { wizard.profile })
-        games = GamesModel(paths: paths, libraryRoot: { paths.defaultLibraryRoot })
-        if Self.migrator(paths).isNeeded {
-            screen = .migrating
+        games = GamesModel(paths: paths, libraryRoot: { wizard.profile.libraryRoot })
+        screen = .wizard
+        if Self.migrator(paths).isNeeded { screen = .migrating } else { route() }
+    }
+
+    static let pendingApplyKey = "retromac.pendingApply"
+
+    /// Home when setup is complete. A profile without retromac's own ES-DE (e.g. macOS wouldn't let the
+    /// old copy be moved) goes straight to the Install step to get a fresh one.
+    func route() {
+        if isSetUp {
+            screen = .home
         } else {
-            screen = Self.isSetUp(paths) ? .home : .wizard
+            screen = .wizard
+            if FileManager.default.fileExists(atPath: paths.profile.path) {
+                wizard.step = .apply
+                wizard.notice = "retromac needs to install its own copy of RetroArch and ES-DE. Click Install & Apply to finish."
+            }
+        }
+    }
+
+    /// Re-applies configs a migration couldn't (e.g. ES-DE was opened mid-way); safe to call every launch.
+    func retryPendingApply() {
+        guard UserDefaults.standard.bool(forKey: Self.pendingApplyKey), screen != .migrating else { return }
+        if (try? wizard.applyConfigs()) != nil {
+            UserDefaults.standard.removeObject(forKey: Self.pendingApplyKey)
         }
     }
 
@@ -36,10 +57,10 @@ final class AppModel {
         Migrator(paths: paths, legacy: LegacyPaths(home: paths.home), isRunning: RunningApps.isRunning)
     }
 
-    /// Setup has run once: there's a profile and retromac has installed ES-DE.
+    /// Setup has run once: there's a profile and retromac's own ES-DE is in place.
     static func isSetUp(_ paths: Paths) -> Bool {
-        guard FileManager.default.fileExists(atPath: paths.profile.path) else { return false }
-        return (try? InstallState.load(from: paths.state))?.apps["esde"] != nil
+        FileManager.default.fileExists(atPath: paths.profile.path)
+            && FileManager.default.fileExists(atPath: paths.applications.appending(path: "ES-DE.app").path)
     }
 
     var isSetUp: Bool { Self.isSetUp(paths) }
@@ -56,8 +77,14 @@ final class AppModel {
         do {
             _ = try await Task.detached { try migrator.run() }.value
             wizard.reloadProfile()
-            try? wizard.applyConfigs()
-            screen = isSetUp ? .home : .wizard
+            games.dats = DatStore(paths: paths).load()
+            do {
+                try wizard.applyConfigs()
+            } catch {
+                // Not fatal: the migration already pointed ES-DE at the new library. Retried next launch.
+                UserDefaults.standard.set(true, forKey: Self.pendingApplyKey)
+            }
+            route()
             await refreshLibraryStats()
         } catch MigrationError.appRunning(let app) {
             migrationError = "Quit \(app.replacingOccurrences(of: ".app", with: "")) to finish updating retromac."
@@ -73,13 +100,13 @@ final class AppModel {
     }
 
     func showGamesInFinder() {
-        let library = paths.defaultLibraryRoot
+        let library = wizard.profile.libraryRoot
         try? FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
         NSWorkspace.shared.activateFileViewerSelecting([library])
     }
 
     func refreshLibraryStats() async {
-        let library = paths.defaultLibraryRoot
+        let library = wizard.profile.libraryRoot
         let stats = await Task.detached { LibraryStats.scan(library) }.value
         games.librarySystems = stats.bySystem
         libraryStats = stats.count == 0 ? "No games yet"

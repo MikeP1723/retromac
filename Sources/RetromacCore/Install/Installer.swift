@@ -74,6 +74,8 @@ public struct Installer: Sendable {
         let violations = ManifestPolicy.violations(manifest)
         guard violations.isEmpty else { throw InstallError.policy(violations) }
         var state = try InstallState.load(from: paths.state)
+        // Anything this installer writes is in the Application Support layout, never a legacy one.
+        state.layoutVersion = Migrator.layoutVersion
         var report = InstallReport()
         let fm = FileManager.default
         removeStaleStaging()

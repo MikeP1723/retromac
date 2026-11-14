@@ -16,7 +16,10 @@ struct RetromacApp: App {
         WindowGroup("retromac") {
             RootView(app: app, updates: app.updates)
                 .frame(minWidth: 640, minHeight: 520)
-                .task { await app.updates.check(force: false) }
+                .task {
+                    app.retryPendingApply()
+                    await app.updates.check(force: false)
+                }
         }
         .windowResizability(.contentSize)
         .commands {
@@ -71,6 +74,9 @@ struct WizardView: View {
 
             if let error = model.loadError {
                 Text(error).foregroundStyle(.red).padding()
+            }
+            if let notice = model.notice {
+                Label(notice, systemImage: "info.circle").padding(.horizontal).padding(.top, 8)
             }
 
             Group {
