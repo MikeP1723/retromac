@@ -9,13 +9,16 @@ public enum LicensePolicy {
         "MPL-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "Apache-2.0",
         // Unversioned "GPL" means any version (GPL §14), so it can be taken as GPLv3.
         "GPL-1.0-or-later", "LicenseRef-PublicDomain",
+        // xemu's official blank Xbox HDD image: no license file; its README calls it "free of any
+        // copyrighted content" (a FATX disk with an nxdk-built dummy dashboard). Data, never linked.
+        "LicenseRef-xemu-hdd-image-copyright-free",
     ]
     /// Code vendored into or linked by retromac: must be GPLv3-compatible.
     public static let vendoredAllowed: Set<String> = runtimeAllowed.subtracting(["GPL-2.0-only"])
 }
 
 public enum ManifestPolicy {
-    public static let allowedHosts: Set<String> = ["buildbot.libretro.com", "gitlab.com", "github.com"]
+    public static let allowedHosts: Set<String> = ["buildbot.libretro.com", "gitlab.com", "github.com", "dl.dolphin-emu.org"]
     /// libretro publishes macOS cores only at mutable `latest/` URLs, so these may be unpinned.
     static let unpinnedCoreHost = "buildbot.libretro.com"
     /// retromac only ever updates itself from its own repository's releases.
@@ -38,6 +41,12 @@ public enum ManifestPolicy {
             }
             out += transport(core.id, core.url)
             out += unsafe(core.id, ["id": core.id, "file": core.file, "libraryName": core.libraryName])
+        }
+        for asset in m.assets {
+            out += common(asset.id, asset.license, .universal, false, asset.url)
+            if !isSHA256(asset.sha256) { out.append("\(asset.id): sha256 must be 64 lowercase hex chars") }
+            out += transport(asset.id, asset.url)
+            out += unsafe(asset.id, ["id": asset.id, "fileName": asset.fileName])
         }
         if let app = m.retromac {
             if !isSHA256(app.sha256) { out.append("retromac: sha256 must be 64 lowercase hex chars") }
