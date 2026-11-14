@@ -159,3 +159,15 @@ private func listing(_ dir: URL) -> [String] {
     #expect(!FileManager.default.fileExists(atPath: dir.appending(path: evil + ".cue").path))
     #expect(listing(dir).filter { $0.hasSuffix(".cue") } == ["Victim.cue"])
 }
+
+@Test func imageNameWithUnicodeLineSeparatorGetsNoCue() throws {
+    // DiscSniffer splits cue lines on Character.isNewline, which includes U+2028/U+2029 (not control characters).
+    let dir = try folder()
+    try cueSet(dir, "Victim")
+    for separator in ["\u{2028}", "\u{2029}"] {
+        let s = separator
+        try rawImage(dir.appending(path: "Evil\(s)FILE Victim.bin BINARY\(s)TRACK 01 MODE2\(s)x\(s == "\u{2028}" ? "1" : "2").bin"))
+    }
+    _ = try DiscSets.organize(dir)
+    #expect(listing(dir).filter { $0.hasSuffix(".cue") } == ["Victim.cue"])
+}
