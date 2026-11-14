@@ -2,8 +2,8 @@
 import Foundation
 
 /// libretro's per-core build list for the arm64 nightly directory.
-public struct CoreIndex: Equatable, Sendable {
-    public struct Entry: Equatable, Sendable {
+public struct CoreIndex: Codable, Equatable, Sendable {
+    public struct Entry: Codable, Equatable, Sendable {
         public var date: String
         /// CRC32 of the dylib inside the archive (not of the archive).
         public var crc32: String

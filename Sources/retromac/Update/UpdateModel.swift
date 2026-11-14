@@ -50,6 +50,13 @@ final class UpdateModel {
     func check(force: Bool) async {
         let defaults = UserDefaults.standard
         if !force, let last = defaults.object(forKey: Self.lastCheckKey) as? Date, Date().timeIntervalSince(last) < 24 * 60 * 60 {
+            // Skip the network, not the result: re-plan from the last check so the banner survives a relaunch.
+            if let cached = UpdateCache(paths: paths).load() {
+                latest = cached.manifest
+                coreIndex = cached.coreIndex
+                replan()
+                selected = Set(plan?.updates.filter(\.managed).map(\.id) ?? [])
+            }
             return
         }
         error = nil
@@ -63,6 +70,7 @@ final class UpdateModel {
                 log.append("Couldn't check for core rebuilds: \(error.localizedDescription)")
             }
             latest = release.manifest
+            try? UpdateCache(paths: paths).save(manifest: release.manifest, coreIndex: coreIndex)
             replan()
             selected = Set(plan?.updates.filter(\.managed).map(\.id) ?? [])
             adopt = []
