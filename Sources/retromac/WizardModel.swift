@@ -138,17 +138,24 @@ final class WizardModel {
         }
     }
 
+    /// After retromac was moved or replaced, points the login agent at this copy.
+    func repairConsoleAgent() {
+        guard profile.console?.enabled == true else { return }
+        let agent = ConsoleAgent(paths: paths, appBundle: Bundle.main.bundleURL, runner: ProcessRunner())
+        if agent.isInstalled, agent.needsRepair { try? agent.install() }
+    }
+
     /// Installs the login agent while Console Mode is on, and removes it when it's off.
     private func applyConsoleMode() throws {
         let app = Bundle.main.bundleURL
         let agent = ConsoleAgent(paths: paths, appBundle: app, runner: ProcessRunner())
         if profile.console?.enabled == true {
-            guard app.pathExtension == "app" else {
-                log.append("Note: Console Mode only works from retromac.app.")
-                return
+            do {
+                try agent.install()
+                log.append("Console Mode is on.")
+            } catch ConsoleAgentError.notInApplications {
+                log.append("Console Mode needs retromac in your Applications folder. Move it there, open it again, and click Install & Apply.")
             }
-            try agent.install()
-            log.append("Console Mode is on.")
         } else if agent.isInstalled {
             DistributedNotificationCenter.default().postNotificationName(.init("petersoft.retromac.console.disabled"), object: nil, deliverImmediately: true)
             try agent.uninstall()

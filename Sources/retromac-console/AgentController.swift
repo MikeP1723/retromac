@@ -47,8 +47,8 @@ final class AgentController {
 
     /// launchd restarts a crashed agent in the same login session; that isn't a login.
     private func isFirstStartThisLogin() -> Bool {
-        guard let session = ConsoleLogin.currentSessionID() else { return true }
-        return ConsoleLogin.claimFirstStart(root: paths.root, sessionID: session)
+        guard let login = ConsoleLogin.current() else { return true }
+        return ConsoleLogin.claimFirstStart(root: paths.root, login: login)
     }
 
     private func observeControllers() {
@@ -196,10 +196,10 @@ final class AgentController {
         NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration)
     }
 
-    /// retromac.app is three levels up from Contents/MacOS/retromac-console.
+    /// launchd passes retromac.app's path (see ConsoleAgent.plist).
     private func openHome() {
-        var app = URL(filePath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        for _ in 0..<3 { app.deleteLastPathComponent() }
+        guard CommandLine.arguments.count > 1 else { return }
+        let app = URL(filePath: CommandLine.arguments[1])
         guard app.pathExtension == "app" else { return }
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
     }
