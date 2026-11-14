@@ -146,3 +146,79 @@ let nesHeader = "Nintendo - Nintendo Entertainment System (Headerless)"
     let (_, candidates) = try rig.importer.analyze([try rig.drop("e.nes", rom)])
     #expect(candidates[0].destination == rig.library.appending(path: "nes/Evil- ..-Name.nes"))
 }
+func sparseFile(_ url: URL, bytes: UInt64 = 100 << 20) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: url.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.truncate(atOffset: bytes)
+    try handle.close()
+}
+
+func folderBytes(_ dir: URL) -> Int {
+    let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.totalFileAllocatedSizeKey])
+    var total = 0
+    while let url = walker?.nextObject() as? URL {
+        total += (try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0
+    }
+    return total
+}
+
+@Test func symlinkToLargeFileIsNotLoaded() throws {
+    let rig = try ImportRig()
+    let target = rig.dir.appending(path: "target.bin")
+    try sparseFile(target)
+    let link = rig.drops.appending(path: "big.nes")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    let (_, candidates) = try rig.importer.analyze([link])
+    #expect(candidates.map(\.status) == [.unidentified(reason: "too large for a cartridge system")])
+    #expect(candidates[0].destination == nil)
+}
+@Test func archiveWithHugeMemberIsNotExtracted() throws {
+    let rig = try ImportRig()
+    let staging = rig.dir.appending(path: "zipsrc")
+    try sparseFile(staging.appending(path: "huge.nes"))
+    let zip = rig.drops.appending(path: "big.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "huge.nes"])
+    let (session, candidates) = try rig.importer.analyze([zip])
+    #expect(candidates.map(\.status) == [.unidentified(reason: "too large for a cartridge system")])
+    #expect(candidates[0].source == "big.zip")
+    #expect(folderBytes(session.dir) < 1 << 20)
+}
+@Test func archivesNestOnlyOneLevel() throws {
+    let rig = try ImportRig()
+    let l3 = rig.dir.appending(path: "l3"), l2 = rig.dir.appending(path: "l2"), l1 = rig.dir.appending(path: "l1")
+    try FileManager.default.createDirectory(at: l3, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: l2, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: l1, withIntermediateDirectories: true)
+    try nesROM().write(to: l3.appending(path: "deep.nes"))
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", l2.appending(path: "inner.zip").path, "-C", l3.path, "deep.nes"])
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", l1.appending(path: "middle.zip").path, "-C", l2.path, "inner.zip"])
+    let outer = rig.drops.appending(path: "outer.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", outer.path, "-C", l1.path, "middle.zip"])
+    let (_, candidates) = try rig.importer.analyze([outer])
+    #expect(candidates.map(\.status) == [.failed("archive nested too deeply")])
+    #expect(candidates[0].source == "outer.zip › middle.zip › inner.zip")
+}
+@Test func duplicatesAcrossFilenamesAndAfterDatImport() throws {
+    let rig = try ImportRig()
+    let rom = nesROM()
+    let (s1, c1) = try rig.importer.analyze([try rig.drop("smb.nes", rom)])
+    _ = try rig.importer.commit(s1, c1)
+    let (_, c2) = try rig.importer.analyze([try rig.drop("Super Mario (copy).nes", rom)])
+    #expect(c2.map(\.status) == [.duplicate(.nes)])
+    #expect(c2[0].destination == rig.library.appending(path: "nes/smb.nes"))
+    try rig.importDat(nesHeader, [("Alpha (USA)", sha1hex(rom.dropFirst(16)))])
+    let (_, c3) = try rig.importer.analyze([try rig.drop("again.nes", rom)])
+    #expect(c3.map(\.status) == [.duplicate(.nes)])
+}
+@Test func unidentifiedDuplicatesAreCaught() throws {
+    let rig = try ImportRig()
+    let junk = Data(repeating: 9, count: 4096)
+    let (s1, c1) = try rig.importer.analyze([try rig.drop("mystery.bin", junk), try rig.drop("again/mystery.bin", junk)])
+    #expect(c1.map(\.status) == [.unidentified(reason: Importer.unrecognized), .duplicate(nil)])
+    _ = try rig.importer.commit(s1, c1)
+    let (_, c2) = try rig.importer.analyze([try rig.drop("renamed.bin", junk)])
+    #expect(c2.map(\.status) == [.duplicate(nil)])
+    #expect(try FileManager.default.contentsOfDirectory(atPath: rig.library.appending(path: "_Unidentified").path).sorted()
+        == ["mystery.bin", "mystery.bin.txt"])
+}

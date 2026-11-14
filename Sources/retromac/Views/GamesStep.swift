@@ -42,6 +42,7 @@ struct GamesStep: View {
                     .overlay(Text("Drop games, folders or .zip files here").foregroundStyle(.secondary))
                     .frame(height: 140)
                     .dropDestination(for: URL.self) { urls, _ in
+                        guard !games.committing else { return false }
                         Task { await games.analyze(urls) }
                         return true
                     } isTargeted: { targeted = $0 }

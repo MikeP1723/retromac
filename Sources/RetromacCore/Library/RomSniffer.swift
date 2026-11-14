@@ -15,8 +15,20 @@ public struct Sniffed: Equatable, Sendable {
 /// Identifies cartridge images from their header bytes.
 public enum RomSniffer {
     public static let romExtensions: Set<String> = ["nes", "sfc", "smc", "md", "gen", "bin", "smd", "z64", "n64", "v64"]
+    /// The SNES header test is a checksum heuristic that structured non-ROM files can pass, so it
+    /// only runs on files named like SNES images.
+    static let snesExtensions: Set<String> = ["sfc", "smc", "swc", "fig", "bin"]
 
-    public static func sniff(_ data: Data) -> Sniffed? {
+    /// True when the first bytes carry an NES, N64 or Genesis signature (cheap pre-check on a prefix).
+    public static func hasMagic(_ prefix: Data) -> Bool {
+        let b = [UInt8](prefix.prefix(0x104))
+        let n64: [[UInt8]] = [[0x80, 0x37, 0x12, 0x40], [0x37, 0x80, 0x40, 0x12], [0x40, 0x12, 0x37, 0x80]]
+        return b.starts(with: [0x4E, 0x45, 0x53, 0x1A])
+            || n64.contains { b.starts(with: $0) }
+            || (b.count >= 0x104 && Array(b[0x100..<0x104]) == Array("SEGA".utf8))
+    }
+
+    public static func sniff(_ data: Data, ext: String) -> Sniffed? {
         let bytes = [UInt8](data)
         if bytes.starts(with: [0x4E, 0x45, 0x53, 0x1A]) {
             // No-Intro hashes NES images without the 16-byte iNES header; emulators need it kept.
@@ -31,11 +43,13 @@ public enum RomSniffer {
             let title = text(bytes, 0x150, 48) ?? text(bytes, 0x120, 48)
             return result(.genesis, normalized: data, matchBytes: data, original: data, title: title, ext: "md")
         }
+        guard snesExtensions.contains(ext.lowercased()) else { return nil }
         let rom = bytes.count % 1024 == 512 ? Array(bytes.dropFirst(512)) : bytes
         for base in [0x7FC0, 0xFFC0] where rom.count >= base + 0x20 {
             let complement = UInt16(rom[base + 0x1C]) | UInt16(rom[base + 0x1D]) << 8
             let checksum = UInt16(rom[base + 0x1E]) | UInt16(rom[base + 0x1F]) << 8
-            if checksum ^ complement == 0xFFFF {
+            // Map mode byte: 0b001x_xxxx for every licensed LoROM/HiROM/ExHiROM layout.
+            if checksum ^ complement == 0xFFFF && rom[base + 0x15] & 0xE0 == 0x20 {
                 let normalized = Data(rom)
                 return result(.snes, normalized: normalized, matchBytes: normalized, original: data,
                               title: text(rom, base, 21), ext: "sfc")

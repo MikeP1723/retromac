@@ -30,8 +30,11 @@ func importDats(_ args: [String]) {
     var failed = false
     for file in positional(args, valued: ["--home"]) {
         do {
-            for dat in try store.importDats([URL(filePath: file)], runner: ProcessRunner()) {
-                print("\(dat.system.rawValue) \(dat.source) \(dat.version) \(dat.entries.count) games")
+            for outcome in try store.importDats([URL(filePath: file)], runner: ProcessRunner()) {
+                switch outcome {
+                case .imported(let dat): print("\(dat.system.rawValue) \(dat.source) \(dat.version) \(dat.entries.count) games")
+                case .skipped(let name, let reason): print("skip \(name) \(reason)")
+                }
             }
         } catch {
             print("FAIL \(file) \(error)")
@@ -53,7 +56,7 @@ func importGames(_ args: [String]) throws {
         switch item.status {
         case .identified(let system, let name): print("identified \(system.rawValue) \(name)")
         case .unverified(let system): print("unverified \(system.rawValue) \(file)")
-        case .duplicate(let system): print("duplicate \(system.rawValue) \(file)")
+        case .duplicate(let system): print("duplicate \(system?.rawValue ?? "_Unidentified") \(file)")
         case .unidentified(let reason): print("unidentified \(reason) \(item.source)")
         case .notAGame: print("skip \(item.source)")
         case .failed(let reason): print("FAIL \(item.source) \(reason)")

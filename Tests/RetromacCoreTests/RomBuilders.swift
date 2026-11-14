@@ -11,12 +11,13 @@ func nesROM(prg: Data = Data(repeating: 1, count: 16384)) -> Data {
 }
 
 func snesROM(copier: Bool = false, hiROM: Bool = false, title: String = "SUPER GAME", validChecksum: Bool = true,
-             size: Int = 0x20000) -> Data {
+             mapMode: UInt8? = nil, size: Int = 0x20000) -> Data {
     var rom = [UInt8](repeating: 0x55, count: size)
     for i in stride(from: 0x7FC0, to: 0x8000, by: 1) { rom[i] = 0 }
     for i in stride(from: 0xFFC0, to: 0x10000, by: 1) { rom[i] = 0 }
     let base = hiROM ? 0xFFC0 : 0x7FC0
     rom.replaceSubrange(base..<base + 21, with: ascii(title, width: 21))
+    rom[base + 0x15] = mapMode ?? (hiROM ? 0x21 : 0x20)
     let checksum: UInt16 = 0x1234
     let complement: UInt16 = validChecksum ? ~checksum : 0x0000
     rom[base + 0x1C] = UInt8(complement & 0xFF); rom[base + 0x1D] = UInt8(complement >> 8)

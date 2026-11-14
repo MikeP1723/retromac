@@ -62,8 +62,33 @@ func sha1hex(_ data: some DataProtocol) -> String {
     let zip = home.appending(path: "dats.zip")
     try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "Nintendo NES.dat"])
     let imported = try store.importDats([zip], runner: ProcessRunner())
-    #expect(imported.map(\.system) == [.nes])
+    #expect(imported.compactMap(\.imported).map(\.system) == [.nes])
     #expect(store.load()[.nes]?.entries.count == 2)
     #expect(store.lookup(.nes, sha1: ["zz", "bb22"]) == DatEntry(name: "Beta (Japan)"))
     #expect(store.lookup(.snes, sha1: ["bb22"]) == nil)
+}
+@Test func datPackSkipsUnsupportedAndContinues() throws {
+    let home = try makeTempDir()
+    let staging = home.appending(path: "pack")
+    func put(_ name: String, _ header: String, _ games: [(String, String)]) throws {
+        let url = staging.appending(path: name)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try datXML(header: header, games: games).write(to: url)
+    }
+    try put("Nintendo - Nintendo Entertainment System (Headerless).dat", "Nintendo - Nintendo Entertainment System (Headerless)", [("A", "aa")])
+    try put("Nintendo - Nintendo Entertainment System (Headered).dat", "Nintendo - Nintendo Entertainment System (Headered)", [("A", "a1")])
+    try put("Nintendo - Game Boy.dat", "Nintendo - Game Boy", [("G", "gg")])
+    try put("Nintendo - Nintendo 64 (ByteSwapped).dat", "Nintendo - Nintendo 64 (ByteSwapped)", [("N", "nn")])
+    try put("Nintendo - Super Nintendo Entertainment System.dat", "Nintendo - Super Nintendo Entertainment System", [])
+    try put("__MACOSX/._Nintendo - Nintendo Entertainment System (Headerless).dat", "junk", [])
+    let zip = home.appending(path: "pack.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", staging.path, "."])
+
+    let store = DatStore(paths: Paths(home: home))
+    let outcomes = try store.importDats([zip], runner: ProcessRunner())
+    #expect(outcomes.compactMap(\.imported).map(\.system) == [.nes, .nes])
+    #expect(Set(outcomes.compactMap(\.skippedReason)) == [
+        "Nintendo - Game Boy isn't a supported system", "use the BigEndian DAT", "no games in this DAT"])
+    #expect(store.load()[.nes]?.entries.keys.sorted() == ["a1", "aa"])
+    #expect(store.load()[.snes] == nil)
 }
