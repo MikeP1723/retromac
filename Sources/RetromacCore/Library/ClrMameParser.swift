@@ -15,9 +15,14 @@ public enum SerialKey {
         for part in serial.split(separator: ",") {
             let key = normalize(String(part))
             if !key.isEmpty { keys.append(key) }
-            if system == .gc || system == .wii,
-               let match = part.uppercased().firstMatch(of: /(?:DOL|RVL)-([A-Z0-9]{4})/) {
+            let upper = part.uppercased()
+            if system == .gc || system == .wii, let match = upper.firstMatch(of: /(?:DOL|RVL)-([A-Z0-9]{4})(?:-(\d))?/) {
                 keys.append(String(match.1))
+                if let disc = match.2 { keys.append(String(match.1) + disc) }
+            }
+            // Saturn multi-disc serials carry the disc as a suffix ("MK-81307-2"); index the base too.
+            if system == .saturn, let match = upper.trimmingCharacters(in: .whitespaces).wholeMatch(of: /(.+)-(\d)/) {
+                keys.append(normalize(String(match.1)))
             }
         }
         return keys
@@ -71,7 +76,7 @@ public enum ClrMameParser {
             let entry = DatEntry(name: title)
             let serials = [game.fields["serial"]] + game.roms.map { $0["serial"] }
             for serial in serials.compactMap({ $0 }) {
-                for key in SerialKey.keys(for: serial, system: system) { dat.serials[key] = entry }
+                for key in SerialKey.keys(for: serial, system: system) { dat.addSerial(key, entry) }
             }
             for rom in game.roms {
                 if let sha1 = rom["sha1"], !sha1.isEmpty { dat.entries[sha1.lowercased()] = entry }

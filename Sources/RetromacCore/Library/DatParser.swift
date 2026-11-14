@@ -16,8 +16,38 @@ public struct DatFile: Codable, Equatable, Sendable {
     public var source: String
     public var version: String
     public var entries: [String: DatEntry]
-    /// Normalized serial (and GameCube/Wii game ID) → game; empty for cartridge DATs.
-    public var serials: [String: DatEntry] = [:]
+    /// Normalized serial (and GameCube/Wii game ID) → every game carrying it; empty for cartridge DATs.
+    /// Several games can share a serial (multi-disc sets, regional releases), so lookups must resolve.
+    public var serials: [String: [DatEntry]] = [:]
+
+    mutating func addSerial(_ key: String, _ entry: DatEntry) {
+        if !(serials[key]?.contains(entry) ?? false) { serials[key, default: []].append(entry) }
+    }
+
+    /// The game a disc belongs to. A disc-specific key is tried first; a serial shared by several games
+    /// only resolves when they're discs of one game (the name without "(Disc N)"). Otherwise nil, so a
+    /// game is never given another game's name.
+    public func lookup(serial: String, disc: Int?, region: String? = nil) -> DatEntry? {
+        var keys: [String] = []
+        if let disc {
+            let base = SerialKey.normalize(serial)
+            keys.append(system == .gc || system == .wii ? base + String(disc - 1) : base + String(disc))
+        }
+        keys += SerialKey.keys(for: serial, system: system)
+        guard var candidates = keys.lazy.compactMap({ serials[$0] }).first else { return nil }
+        // Regional releases often share a serial; the image's own region picks between them.
+        if candidates.count > 1, let region {
+            candidates = candidates.filter { $0.name.contains(region) }
+        }
+        return Self.resolve(candidates)
+    }
+
+    static func resolve(_ candidates: [DatEntry]) -> DatEntry? {
+        guard !candidates.isEmpty else { return nil }
+        if candidates.count == 1 { return candidates[0] }
+        let bases = Set(candidates.map { $0.name.replacing(/\s*\(Disc \d+\)/, with: "") })
+        return bases.count == 1 ? DatEntry(name: bases.first!) : nil
+    }
 }
 
 extension DatFile {
@@ -29,7 +59,7 @@ extension DatFile {
         source = try c.decode(String.self, forKey: .source)
         version = try c.decode(String.self, forKey: .version)
         entries = try c.decode([String: DatEntry].self, forKey: .entries)
-        serials = try c.decodeIfPresent([String: DatEntry].self, forKey: .serials) ?? [:]
+        serials = (try? c.decodeIfPresent([String: [DatEntry]].self, forKey: .serials)) ?? [:]
     }
 }
 

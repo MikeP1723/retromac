@@ -40,7 +40,7 @@ func clrmame(_ header: String, _ games: String) -> Data {
         )
         """))
     #expect(dat.system == .psx)
-    #expect(dat.serials["SCUS94900"] == DatEntry(name: "Crash Bandicoot (USA)"))
+    #expect(dat.serials["SCUS94900"] == [DatEntry(name: "Crash Bandicoot (USA)")])
 }
 @Test func gameCubeGameIDKey() throws {
     let home = try makeTempDir()
@@ -74,7 +74,7 @@ func clrmame(_ header: String, _ games: String) -> Data {
     let dat = try ClrMameParser.parse(clrmame("Sega - Saturn", """
         game ( name "Say \\"Hi\\" (Japan)" serial "T-1234G" rom ( name "x.bin" sha1 EF ) )
         """))
-    #expect(dat.serials["T1234G"] == DatEntry(name: "Say \"Hi\" (Japan)"))
+    #expect(dat.serials["T1234G"] == [DatEntry(name: "Say \"Hi\" (Japan)")])
 }
 @Test func old3aJSONStillLoads() throws {
     let json = #"{"system":"nes","source":"x","version":"1","entries":{"aa":{"name":"A"}}}"#
@@ -87,4 +87,41 @@ func clrmame(_ header: String, _ games: String) -> Data {
     try clrmame("Nintendo - Nintendo Entertainment System", "game ( name \"A\" rom ( name \"a.nes\" sha1 AA ) )").write(to: url)
     let outcomes = try DatStore(paths: Paths(home: home)).importDats([url], runner: ProcessRunner())
     #expect(outcomes.compactMap(\.imported).map(\.system) == [.nes])
+}
+func storeWith(_ header: String, _ games: [(name: String, serial: String)]) throws -> DatStore {
+    let home = try makeTempDir()
+    let url = home.appending(path: "x.dat")
+    try clrmame(header, games.map { "game ( name \"\($0.name)\" serial \"\($0.serial)\" rom ( name \"x\" sha1 \(UUID().uuidString.prefix(8)) ) )" }
+        .joined(separator: "\n")).write(to: url)
+    let store = DatStore(paths: Paths(home: home))
+    _ = try store.importDats([url], runner: ProcessRunner())
+    return store
+}
+
+@Test func multiDiscSameSerialUsesBaseName() throws {
+    let store = try storeWith("Sony - PlayStation", [("Final Fantasy VII (USA) (Disc 1)", "SCUS-94163"),
+                                                   ("Final Fantasy VII (USA) (Disc 2)", "SCUS-94163"),
+                                                   ("Final Fantasy VII (USA) (Disc 3)", "SCUS-94163")])
+    #expect(store.lookup(.psx, serial: "SCUS-94163") == DatEntry(name: "Final Fantasy VII (USA)"))
+}
+@Test func conflictingNamesAreNotGuessed() throws {
+    let store = try storeWith("Microsoft - Xbox", [("007 - Agent Under Fire (USA)", "EA-013"), ("007 - Agent Under Fire (Europe)", "EA-013")])
+    #expect(store.lookup(.xbox, serial: "EA-013") == nil)
+}
+@Test func gameCubeDiscNumberSelectsDisc() throws {
+    let store = try storeWith("Nintendo - GameCube", [("Resident Evil 4 (USA) (Disc 1)", "DL-DOL-G4BE-0-USA"),
+                                                    ("Resident Evil 4 (USA) (Disc 2)", "DL-DOL-G4BE-1-USA")])
+    #expect(store.lookup(.gc, serial: "G4BE", disc: 1) == DatEntry(name: "Resident Evil 4 (USA) (Disc 1)"))
+    #expect(store.lookup(.gc, serial: "G4BE", disc: 2) == DatEntry(name: "Resident Evil 4 (USA) (Disc 2)"))
+    #expect(store.lookup(.gc, serial: "G4BE") == DatEntry(name: "Resident Evil 4 (USA)"))
+}
+@Test func saturnDiscNumberSelectsDisc() throws {
+    let store = try storeWith("Sega - Saturn", [("Panzer Dragoon Saga (USA) (Disc 1)", "MK-81307-1"),
+                                              ("Panzer Dragoon Saga (USA) (Disc 2)", "MK-81307-2")])
+    #expect(store.lookup(.saturn, serial: "MK-81307", disc: 2) == DatEntry(name: "Panzer Dragoon Saga (USA) (Disc 2)"))
+}
+@Test func regionHintPicksRegionalRelease() throws {
+    let store = try storeWith("Microsoft - Xbox", [("007 - Agent Under Fire (USA)", "EA-013"), ("007 - Agent Under Fire (Europe)", "EA-013")])
+    #expect(store.load()[.xbox]?.lookup(serial: "EA-013", disc: nil, region: "Europe") == DatEntry(name: "007 - Agent Under Fire (Europe)"))
+    #expect(store.load()[.xbox]?.lookup(serial: "EA-013", disc: nil, region: "Japan") == nil)
 }

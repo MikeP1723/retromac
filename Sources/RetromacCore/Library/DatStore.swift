@@ -62,7 +62,7 @@ public struct DatStore: Sendable {
                 }
                 if var existing = merged[dat.system] {
                     existing.entries.merge(dat.entries) { old, _ in old }
-                    existing.serials.merge(dat.serials) { old, _ in old }
+                    for (key, entries) in dat.serials { entries.forEach { existing.addSerial(key, $0) } }
                     existing.source += " + " + dat.source
                     merged[dat.system] = existing
                 } else {
@@ -102,9 +102,8 @@ public struct DatStore: Sendable {
         return (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
-    public func lookup(_ system: SystemID, serial: String) -> DatEntry? {
-        guard let dat = load()[system] else { return nil }
-        return SerialKey.keys(for: serial, system: system).lazy.compactMap { dat.serials[$0] }.first
+    public func lookup(_ system: SystemID, serial: String, disc: Int? = nil) -> DatEntry? {
+        load()[system]?.lookup(serial: serial, disc: disc)
     }
 
     public func lookup(_ system: SystemID, sha1: [String]) -> DatEntry? {

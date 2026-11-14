@@ -30,18 +30,19 @@ func id(_ url: URL) -> DiscID? {
 }
 @Test func saturnHeader() throws {
     let img = try saturnImage(try makeTempDir().appending(path: "s.iso"), serial: "T-4305G", title: "PANZER DRAGOON")
-    #expect(id(img) == DiscID(system: .saturn, serial: "T-4305G", title: "PANZER DRAGOON"))
+    #expect(id(img) == DiscID(system: .saturn, serial: "T-4305G", title: "PANZER DRAGOON", disc: 1))
 }
 @Test func gameCubeAndWiiAcrossContainers() throws {
     let dir = try makeTempDir()
-    #expect(id(try gcmImage(dir.appending(path: "a.iso"), id: "GW7P", wii: false)) == DiscID(system: .gc, serial: "GW7P", title: "Test Disc"))
+    #expect(id(try gcmImage(dir.appending(path: "a.iso"), id: "GW7P", wii: false)) == DiscID(system: .gc, serial: "GW7P", title: "Test Disc", disc: 1))
     #expect(id(try gcmImage(dir.appending(path: "b.rvz"), id: "SP3E", wii: true, wrap: .rvz))?.system == .wii)
     #expect(id(try gcmImage(dir.appending(path: "c.wbfs"), id: "RJ2J", wii: true, wrap: .wbfs))?.serial == "RJ2J")
 }
 @Test func xboxSerialFromTitleID() throws {
     let dir = try makeTempDir()
     #expect(id(try xisoImage(dir.appending(path: "x.iso"), titleID: 0x4541_000D, title: "Test Game", redumpOffset: false))
-        == DiscID(system: .xbox, serial: "EA-013", title: "Test Game"))
+        == DiscID(system: .xbox, serial: "EA-013", title: "Test Game", region: "USA"))
+    #expect(id(try xisoImage(dir.appending(path: "z.iso"), titleID: 0x4541_000D, title: "T", redumpOffset: false, regions: 0x4))?.region == "Europe")
     #expect(id(try xisoImage(dir.appending(path: "y.iso"), titleID: 0x4D53_0004, title: "Halo", redumpOffset: true))?.serial == "MS-004")
 }
 @Test func wiiUAndSwitchContainers() throws {

@@ -213,9 +213,7 @@ public struct Importer: Sendable {
     /// Names and plans a disc or console game; nothing is read beyond what the sniffer already read.
     func planDisc(_ file: URL, source: String, id: DiscID, _ state: inout Analysis) {
         let system = id.system
-        let entry = id.serial.flatMap { serial in
-            state.index[system].flatMap { dat in SerialKey.keys(for: serial, system: system).lazy.compactMap { dat.serials[$0] }.first }
-        }
+        let entry = id.serial.flatMap { state.index[system]?.lookup(serial: $0, disc: id.disc, region: id.region) }
         let stem = file.deletingPathExtension().lastPathComponent
         let name = RomSniffer.sanitize(entry?.name ?? NameCleaner.clean(stem, headerTitle: id.title))
         let folder = libraryRoot.appending(path: system.rawValue)
@@ -257,7 +255,7 @@ public struct Importer: Sendable {
             item.files = [FileCopy(from: file, to: destination, move: movable(file))]
         }
 
-        let key = id.serial.map { "\(system.rawValue):\(SerialKey.normalize($0))" }
+        let key = id.serial.map { "\(system.rawValue):\(SerialKey.normalize($0)):\(id.disc ?? 0)" }
         let payload = item.files.last!
         if (key.map { state.seenDiscs.contains($0) } ?? false) || Self.sameSize(payload.from, payload.to) {
             item.status = .duplicate(system)

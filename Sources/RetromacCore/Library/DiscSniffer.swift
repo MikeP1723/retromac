@@ -5,6 +5,10 @@ public struct DiscID: Equatable, Sendable {
     public var system: SystemID
     public var serial: String?
     public var title: String?
+    /// 1-based disc number when the header carries one (GameCube/Wii, Saturn).
+    public var disc: Int? = nil
+    /// Release region as DATs name it ("USA", "Japan", "Europe"), when the image says (Xbox).
+    public var region: String? = nil
 }
 
 /// Identifies disc and modern-console images from a few header reads; never reads a whole image.
@@ -84,7 +88,8 @@ public enum DiscSniffer {
         } else {
             return nil
         }
-        return DiscID(system: system, serial: ascii(h, 0, 4), title: ascii(Array(head[offset + 0x20..<min(head.count, offset + 0x60)]), 0, 0x40))
+        return DiscID(system: system, serial: ascii(h, 0, 4), title: ascii(Array(head[offset + 0x20..<min(head.count, offset + 0x60)]), 0, 0x40),
+                      disc: Int(h[6]) + 1)
     }
 
     /// Xbox XISO (at 0, or after the video partition in full Redump images): title from default.xbe.
@@ -100,15 +105,22 @@ public enum DiscSniffer {
             let header = SectorReader.read(url, at: xbeAt, count: 0x120)
             guard header.count == 0x120, header.starts(with: Array("XBEH".utf8)) else { return DiscID(system: .xbox) }
             let certOffset = UInt64(u32(header, 0x118) &- u32(header, 0x104))
-            let cert = SectorReader.read(url, at: xbeAt + certOffset, count: 0x0C + 80)
-            guard cert.count == 0x0C + 80 else { return DiscID(system: .xbox) }
+            let cert = SectorReader.read(url, at: xbeAt + certOffset, count: 0xA4)
+            guard cert.count == 0xA4 else { return DiscID(system: .xbox) }
             let titleID = u32(cert, 0x08)
             let a = UInt8(titleID >> 24), b = UInt8(titleID >> 16 & 0xFF)
             let serial = (0x20...0x7E).contains(a) && (0x20...0x7E).contains(b)
                 ? "\(Character(UnicodeScalar(a)))\(Character(UnicodeScalar(b)))-\(String(format: "%03d", titleID & 0xFFFF))" : nil
             let units = stride(from: 0x0C, to: 0x0C + 80, by: 2).map { UInt16(cert[$0]) | UInt16(cert[$0 + 1]) << 8 }
             let title = String(decoding: units.prefix { $0 != 0 }, as: UTF16.self).trimmingCharacters(in: .whitespaces)
-            return DiscID(system: .xbox, serial: serial, title: title.isEmpty ? nil : title)
+            // Certificate game-region flags; a disc for exactly one region names it.
+            let region: String? = switch u32(cert, 0xA0) & 0x7 {
+            case 0x1: "USA"
+            case 0x2: "Japan"
+            case 0x4: "Europe"
+            default: nil
+            }
+            return DiscID(system: .xbox, serial: serial, title: title.isEmpty ? nil : title, region: region)
         }
         return nil
     }
@@ -135,7 +147,8 @@ public enum DiscSniffer {
     static func sectorBased(_ url: URL) -> DiscID? {
         guard let reader = SectorReader(url: url) else { return nil }
         if let first = reader.user(sector: 0), first.starts(with: Array("SEGA SEGASATURN ".utf8)) {
-            return DiscID(system: .saturn, serial: ascii(first, 0x20, 10), title: ascii(first, 0x60, 112))
+            let disc = ascii(first, 0x38, 8)?.firstMatch(of: /CD-(\d+)/).flatMap { Int($0.1) }
+            return DiscID(system: .saturn, serial: ascii(first, 0x20, 10), title: ascii(first, 0x60, 112), disc: disc)
         }
         guard let pvd = reader.user(sector: 16), Array(pvd[1..<6]) == Array("CD001".utf8) else { return nil }
         let isPlayStation = ascii(pvd, 8, 32) == "PLAYSTATION"

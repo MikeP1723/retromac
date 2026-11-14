@@ -119,3 +119,15 @@ extension ImportRig {
     _ = try rig.importer.commit(session, candidates)
     #expect(try read(victim) == "keep me")
 }
+@Test func multiDiscGameCubeImportsEveryDisc() throws {
+    let rig = try ImportRig()
+    try rig.importClrMame("Nintendo - GameCube", """
+        game ( name "Resident Evil 4 (USA) (Disc 1)" serial "DL-DOL-G4BE-0-USA" rom ( name "a" sha1 A1 ) )
+        game ( name "Resident Evil 4 (USA) (Disc 2)" serial "DL-DOL-G4BE-1-USA" rom ( name "b" sha1 B1 ) )
+        """)
+    let d1 = try gcmImage(rig.drops.appending(path: "re4-1.iso"), id: "G4BE", wii: false, disc: 0)
+    let d2 = try gcmImage(rig.drops.appending(path: "re4-2.iso"), id: "G4BE", wii: false, disc: 1)
+    let (_, candidates) = try rig.importer.analyze([d1, d2])
+    #expect(candidates.map(\.status) == [.identified(.gc, name: "Resident Evil 4 (USA) (Disc 1)"),
+                                         .identified(.gc, name: "Resident Evil 4 (USA) (Disc 2)")])
+}

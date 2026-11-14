@@ -77,10 +77,11 @@ func isoImage(_ url: URL, systemCNF: String?, raw: Bool = false, size: UInt64 = 
     return url
 }
 
-func saturnImage(_ url: URL, serial: String, title: String) throws -> URL {
+func saturnImage(_ url: URL, serial: String, title: String, disc: String = "CD-1/1") throws -> URL {
     let image = try SparseImage(url, size: 32 << 20)
     try image.put("SEGA SEGASATURN ", at: 0)
     try image.put(serial.padding(toLength: 10, withPad: " ", startingAt: 0), at: 0x20)
+    try image.put(disc.padding(toLength: 8, withPad: " ", startingAt: 0), at: 0x38)
     try image.put(title.padding(toLength: 112, withPad: " ", startingAt: 0), at: 0x60)
     try image.close()
     return url
@@ -89,7 +90,7 @@ func saturnImage(_ url: URL, serial: String, title: String) throws -> URL {
 enum NintendoWrap { case plain, rvz, wbfs }
 
 func gcmImage(_ url: URL, id: String, wii: Bool, wrap: NintendoWrap = .plain, title: String = "Test Disc",
-              size: UInt64 = 64 << 20) throws -> URL {
+              disc: UInt8 = 0, size: UInt64 = 64 << 20) throws -> URL {
     let image = try SparseImage(url, size: size)
     let header: UInt64
     switch wrap {
@@ -98,13 +99,14 @@ func gcmImage(_ url: URL, id: String, wii: Bool, wrap: NintendoWrap = .plain, ti
     case .wbfs: header = 0x200; try image.put("WBFS", at: 0)
     }
     try image.put(id + "01", at: header)
+    try image.put([disc], at: header + 6)
     try image.put(title, at: header + 0x20)
     if wii { try image.put([0x5D, 0x1C, 0x9E, 0xA3], at: header + 0x18) } else { try image.put([0xC2, 0x33, 0x9F, 0x3D], at: header + 0x1C) }
     try image.close()
     return url
 }
 
-func xisoImage(_ url: URL, titleID: UInt32, title: String, redumpOffset: Bool) throws -> URL {
+func xisoImage(_ url: URL, titleID: UInt32, title: String, redumpOffset: Bool, regions: UInt32 = 0x1) throws -> URL {
     let base: UInt64 = redumpOffset ? 0x1830_0000 : 0
     let image = try SparseImage(url, size: base + (16 << 20))
     try image.put("MICROSOFT*XBOX*MEDIA", at: base + 0x10000)
@@ -121,6 +123,7 @@ func xisoImage(_ url: URL, titleID: UInt32, title: String, redumpOffset: Bool) t
     try image.u32le(0x10200, at: xbe + 0x118)
     try image.u32le(titleID, at: xbe + 0x200 + 0x08)
     try image.put(Array(title.utf16).flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] }, at: xbe + 0x200 + 0x0C)
+    try image.u32le(regions, at: xbe + 0x200 + 0xA0)
     try image.close()
     return url
 }
