@@ -114,6 +114,7 @@ final class WizardModel {
             let installer = Installer(manifest: manifest, paths: paths, downloader: URLSessionDownloader(), runner: ProcessRunner())
             let installed = try await installer.install(systems: profile.systems)
             installed.installed.forEach { log.append("Installed \($0)") }
+            installed.removed.forEach { log.append("Removed \($0), no longer used") }
             installed.skipped.forEach { log.append("Already installed: \($0)") }
             installed.warnings.forEach { log.append("Note: \($0)") }
 

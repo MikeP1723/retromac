@@ -82,7 +82,7 @@ func manifest(apps: [AppEntry] = [], cores: [CoreEntry] = []) -> Manifest {
     #expect(try read(paths.retroarchCores.appending(path: "fake_libretro.dylib")) == "core")
     let state = try InstallState.load(from: paths.state)
     #expect(state.cores["mesen"] == .init(version: "1.0", sha256: entry.sha256!, file: "fake_libretro.dylib",
-                                          crc32: "6b8d854f"))
+                                          crc32: "6b8d854f", libraryName: "Mesen"))
     #expect(state.manifestVersion == 3)
 }
 @Test func shaMismatchInstallsNothing() async throws {
@@ -228,4 +228,44 @@ struct DittoDiesRunner: CommandRunner {
     _ = try await installer(manifest(), paths).install(systems: [])
     #expect(try read(paths.retroarchShadersSlang.appending(path: "crt/crt-easymode.slangp")) == "preset")
     #expect(try read(paths.retroarchSupport.appending(path: "autoconfig/mfi/MFi_Controller.cfg")) == "mfi")
+}
+
+@Test func replacedCoreIsRemovedWithItsRemap() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let old = try coreEntry(makeCoreZip(in: dir, name: "old_libretro.dylib"), id: "old", file: "old_libretro.dylib")
+    _ = try await installer(manifest(cores: [old]), paths).install(systems: [.nes])
+    let remap = paths.coreRemap(libraryName: "Mesen")
+    try FileManager.default.createDirectory(at: remap.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("input_libretro_device_p1 = \"517\"\n".utf8).write(to: remap)
+
+    let newDir = dir.appending(path: "new"); try FileManager.default.createDirectory(at: newDir, withIntermediateDirectories: true)
+    var new = try coreEntry(makeCoreZip(in: newDir, name: "new_libretro.dylib"), id: "new", file: "new_libretro.dylib")
+    new.libraryName = "New"
+    let report = try await installer(manifest(cores: [new]), paths).install(systems: [.nes])
+
+    #expect(report.removed == ["old"])
+    #expect(!FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "old_libretro.dylib").path))
+    #expect(!FileManager.default.fileExists(atPath: remap.path))
+    #expect(!FileManager.default.fileExists(atPath: remap.deletingLastPathComponent().path))
+    #expect(try InstallState.load(from: paths.state).cores["old"] == nil)
+    #expect(FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "new_libretro.dylib").path))
+}
+
+@Test func coreOfADisabledSystemIsKept() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let m = manifest(cores: [try coreEntry(makeCoreZip(in: dir))])
+    _ = try await installer(m, paths).install(systems: [.nes])
+    let report = try await installer(m, paths).install(systems: [])
+    #expect(report.removed.isEmpty)
+    #expect(FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "fake_libretro.dylib").path))
+}
+
+@Test func dylibStillInTheManifestIsKept() async throws {
+    let dir = try makeTempDir(), paths = Paths(home: dir.appending(path: "home"), applications: dir.appending(path: "Apps"))
+    let zip = try makeCoreZip(in: dir)
+    _ = try await installer(manifest(cores: [try coreEntry(zip, id: "renamed")]), paths).install(systems: [.nes])
+    let report = try await installer(manifest(cores: [try coreEntry(zip)]), paths).install(systems: [.nes])
+    #expect(report.removed == ["renamed"])
+    #expect(FileManager.default.fileExists(atPath: paths.retroarchCores.appending(path: "fake_libretro.dylib").path))
+    #expect(try InstallState.load(from: paths.state).cores.keys.sorted() == ["mesen"])
 }
