@@ -59,18 +59,30 @@ public enum DiscSniffer {
         guard let text = (try? String(contentsOf: cue, encoding: .utf8)) ?? (try? String(contentsOf: cue, encoding: .isoLatin1)) else {
             return []
         }
+        let folder = cue.deletingLastPathComponent()
+        let onDisk = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         var files: [(url: URL, name: String, dataTrack: Bool)] = []
         var pending: String?
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.uppercased().hasPrefix("FILE "), let match = line.firstMatch(of: /"([^"]+)"/) {
-                pending = String(match.1)
+            if line.uppercased().hasPrefix("FILE ") {
+                pending = fileName(inFileLine: line)
             } else if line.uppercased().hasPrefix("TRACK "), let name = pending {
-                files.append((cue.deletingLastPathComponent().appending(path: name), name, line.uppercased().contains("MODE")))
+                // Cue sheets made on Windows often differ from the real file name only in case.
+                let actual = onDisk.first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
+                files.append((folder.appending(path: actual), name, line.uppercased().contains("MODE")))
                 pending = nil
             }
         }
         return files
+    }
+
+    /// `FILE "name with spaces.bin" BINARY` or the unquoted `FILE name.bin BINARY`.
+    static func fileName(inFileLine line: String) -> String? {
+        if let match = line.firstMatch(of: /"([^"]+)"/) { return String(match.1) }
+        let words = line.split(separator: " ", omittingEmptySubsequences: true)
+        guard words.count >= 3 else { return nil }
+        return words.dropFirst().dropLast().joined(separator: " ")
     }
 
     /// GameCube/Wii disc header, plain or inside RVZ/WIA (at 0x58) or WBFS (at 0x200).
@@ -158,11 +170,15 @@ public enum DiscSniffer {
            let cnf = reader.user(sector: cnfSector, bytes: cnfSize) {
             for line in String(decoding: cnf, as: UTF8.self).split(whereSeparator: \.isNewline) {
                 let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                guard parts.count == 2, parts[0] == "BOOT" || parts[0] == "BOOT2" else { continue }
-                return DiscID(system: parts[0] == "BOOT2" ? .ps2 : .psx, serial: bootSerial(parts[1]))
+                let key = parts.first?.uppercased()
+                guard parts.count == 2, key == "BOOT" || key == "BOOT2" else { continue }
+                return DiscID(system: key == "BOOT2" ? .ps2 : .psx, serial: bootSerial(parts[1]))
             }
         }
-        return isPlayStation ? DiscID(system: .psx) : nil
+        guard isPlayStation else { return nil }
+        // PS2 discs carry "PLAYSTATION" too; anything bigger than a CD can only be a PS2 DVD.
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64) ?? 0
+        return DiscID(system: size > 1 << 30 ? .ps2 : .psx)
     }
 
     /// "cdrom0:\\SLUS_200.62;1" → "SLUS-20062".

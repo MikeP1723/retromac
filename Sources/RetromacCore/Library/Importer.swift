@@ -110,8 +110,8 @@ public struct Importer: Sendable {
     /// Handles files dropped together; a .bin a .cue in the same group refers to belongs to that cue.
     func handleGroup(_ files: [(URL, String)], depth: Int, _ state: inout Analysis) {
         let cues = files.filter { $0.0.pathExtension.lowercased() == "cue" }
-        let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path } })
-        for (file, source) in files where !claimed.contains(file.standardizedFileURL.path) {
+        let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path.lowercased() } })
+        for (file, source) in files where !claimed.contains(file.standardizedFileURL.path.lowercased()) {
             if Task.isCancelled { return }
             handle(file, source: source, depth: depth, &state)
         }
@@ -240,10 +240,15 @@ public struct Importer: Sendable {
                 return
             }
             let names = tracks.count == 1 ? ["\(name).bin"] : tracks.indices.map { "\(name) (Track \($0 + 1)).bin" }
-            var sheet = (try? String(contentsOf: file, encoding: .utf8)) ?? (try? String(contentsOf: file, encoding: .isoLatin1)) ?? ""
-            for (track, newName) in zip(tracks, names) {
-                sheet = sheet.replacingOccurrences(of: "\"\(track.name)\"", with: "\"\(newName)\"")
-            }
+            let original = (try? String(contentsOf: file, encoding: .utf8)) ?? (try? String(contentsOf: file, encoding: .isoLatin1)) ?? ""
+            // Rewrite each FILE line in order with its new, always-quoted name, keeping the file type.
+            var next = names.makeIterator()
+            let sheet = original.components(separatedBy: "\n").map { raw -> String in
+                let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard line.uppercased().hasPrefix("FILE "), let newName = next.next() else { return raw }
+                let type = line.split(separator: " ").last.map(String.init) ?? "BINARY"
+                return "FILE \"\(newName)\" \(type)" + (raw.hasSuffix("\r") ? "\r" : "")
+            }.joined(separator: "\n")
             let staged = state.session.dir.appending(path: "\(UUID().uuidString).cue")
             guard (try? sheet.write(to: staged, atomically: true, encoding: .utf8)) != nil else {
                 state.candidates.append(failed(source, "couldn't stage the file"))

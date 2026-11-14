@@ -131,3 +131,30 @@ extension ImportRig {
     #expect(candidates.map(\.status) == [.identified(.gc, name: "Resident Evil 4 (USA) (Disc 1)"),
                                          .identified(.gc, name: "Resident Evil 4 (USA) (Disc 2)")])
 }
+@Test func unquotedCueFileNames() throws {
+    let rig = try ImportRig()
+    let dir = rig.drops.appending(path: "ff")
+    _ = try isoImage(dir.appending(path: "track01.bin"), systemCNF: "BOOT = cdrom:\\SCUS_941.63;1\n", raw: true, size: 1 << 20)
+    try write("audio", to: dir.appending(path: "track02.bin"))
+    try write("FILE track01.bin BINARY\r\n  TRACK 01 MODE2/2352\r\nFILE track02.bin BINARY\r\n  TRACK 02 AUDIO\r\n", to: dir.appending(path: "Game (U).cue"))
+    let (session, candidates) = try rig.importer.analyze([dir])
+    #expect(candidates.map(\.status) == [.unverified(.psx)])
+    _ = try rig.importer.commit(session, candidates)
+    let cue = try read(rig.library.appending(path: "psx/Game (USA).cue"))
+    #expect(cue.contains("FILE \"Game (USA) (Track 1).bin\" BINARY") && cue.contains("FILE \"Game (USA) (Track 2).bin\" BINARY"))
+    #expect(try read(rig.library.appending(path: "psx/Game (USA) (Track 2).bin")) == "audio")
+}
+@Test func caseMismatchedCueNames() throws {
+    let rig = try ImportRig()
+    let dir = rig.drops.appending(path: "win")
+    _ = try isoImage(dir.appending(path: "Game (Track 1).bin"), systemCNF: "BOOT = cdrom:\\SCUS_941.63;1\n", raw: true, size: 1 << 20)
+    try write("audio", to: dir.appending(path: "Game (Track 2).bin"))
+    try write("FILE \"game (track 1).bin\" BINARY\n  TRACK 01 MODE2/2352\nFILE \"GAME (TRACK 2).BIN\" BINARY\n  TRACK 02 AUDIO\n", to: dir.appending(path: "Game.cue"))
+    let (_, candidates) = try rig.importer.analyze([dir])
+    #expect(candidates.map(\.status) == [.unverified(.psx)])
+}
+@Test func ps2LowercaseBootKeyAndDVDSize() throws {
+    let dir = try makeTempDir()
+    #expect(id(try isoImage(dir.appending(path: "a.iso"), systemCNF: "boot2 = cdrom0:\\SLUS_200.62;1\n"))?.system == .ps2)
+    #expect(id(try isoImage(dir.appending(path: "b.iso"), systemCNF: nil, size: 2 << 30))?.system == .ps2)
+}
