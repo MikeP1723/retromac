@@ -17,6 +17,8 @@ public struct Paths: Sendable {
     public var defaultLibraryRoot: URL { retromacRoot.appending(path: "Library") }
     /// The rollback slot: one previous generation per updated component.
     public var previous: URL { retromacRoot.appending(path: "previous") }
+    /// Imported No-Intro/Redump DAT indexes, one JSON file per system.
+    public var dats: URL { retromacRoot.appending(path: "dats") }
     /// The manifest the current install was last updated to.
     public var appliedManifest: URL { retromacRoot.appending(path: "manifest.json") }
 
