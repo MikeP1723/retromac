@@ -267,6 +267,18 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
    - 3a: the Importer, No-Intro DAT import and the drag-and-drop Games step, for cartridge systems.
    - 3b: disc systems (Saturn, PS1), Redump DATs, multi-disc `.m3u`, BIOS detection and optional CHD.
    - 3c: the inbox watcher LaunchAgent.
+6. **Game databases are fetched from libretro-database** (Mike, 2026-11-13; this replaces the earlier "user imports No-Intro DATs").
+   - A one-click **Update game databases** downloads the No-Intro and Redump DATs (clrmamepro format) from `raw.githubusercontent.com/libretro/libretro-database` at runtime.
+   - They're never bundled in retromac, and manual import stays available.
+   - Redump entries carry serials, which disc games are matched by.
+7. **The importer recognizes every console on the list now** (Mike, 2026-11-13), even before that console's emulator ships.
+   - **Systems recognized:** NES, SNES, Genesis, N64, PS1, PS2, Saturn, GameCube, Wii, Xbox, Wii U and Switch.
+   - **Files:** they're filed into ES-DE-named folders and wait there until a later phase installs the emulator.
+   - **How they're identified:**
+     - Cartridges by hash.
+     - Disc systems by serial or game ID read from a few header sectors, never a full-image hash.
+     - Wii U and Switch by their container headers, named from the filename (their metadata is encrypted).
+   - **Games not in a database** (hacks, translations, homebrew) get a clean name from the filename, with GoodTools tags translated, e.g. "(U)" becomes "(USA)" and "[h2]" becomes "[Hack]".
 
 ## Findings from Phase 1 verification
 
