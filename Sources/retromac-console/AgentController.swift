@@ -12,7 +12,6 @@ final class AgentController {
     private var session: ConsoleSession!
     private var combos = ComboDetector()
     private let standby = StandbyAssertion()
-    private let retroarch = RetroArchCommands(transport: UDPTransport())
     private var padIDs: [ObjectIdentifier: Int] = [:]
     private var quittingESDE = false
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -149,16 +148,24 @@ final class AgentController {
         for action in actions {
             switch action {
             case .launchESDE: launchESDE()
-            case .bringESDEToFront: running("ES-DE.app")?.activate()
+            case .bringConsoleToFront:
+                if let game = running("RetroArch.app") {
+                    game.unhide()  // un-pauses (pause_nonactive)
+                    game.activate()
+                } else {
+                    running("ES-DE.app")?.activate()
+                }
             case .holdStandbyAssertion: standby.hold()
             case .releaseStandbyAssertion: standby.release()
-            case .pauseGame: await retroarch.pauseIfPlaying()
+            case .pauseGame: running("RetroArch.app")?.hide()  // pause_nonactive pauses it while it isn't active
             case .sleepDisplay: Power.sleepDisplay()
             case .sleepSystem: Power.sleepSystem()
             case .declareUserActivity: Power.declareUserActivity()
             case .quitRetroArch(let grace):
-                guard running("RetroArch.app") != nil else { continue }
-                await retroarch.quit()
+                // A normal quit runs RetroArch's CMD_EVENT_QUIT, which flushes in-game saves; it can then
+                // linger idle after saving, so it's force-quit after the grace period.
+                guard let game = running("RetroArch.app") else { continue }
+                game.terminate()
                 await forceQuit("RetroArch.app", after: grace)
             case .quitESDE(let grace):
                 guard let esde = running("ES-DE.app") else { continue }

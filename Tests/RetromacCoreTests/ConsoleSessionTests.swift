@@ -19,19 +19,19 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
 
 @Test func loginStartLaunchesAndHoldsStandby() {
     var s = ConsoleSession(settings: standby, stateFile: stateFile())
-    #expect(s.handle(.agentStarted(atLogin: true)) == [.launchESDE, .bringESDEToFront, .holdStandbyAssertion])
+    #expect(s.handle(.agentStarted(atLogin: true)) == [.launchESDE, .bringConsoleToFront, .holdStandbyAssertion])
     #expect(s.active)
 }
 @Test func loginStartInTrueSleepHoldsNothing() {
     var s = ConsoleSession(settings: trueSleep, stateFile: stateFile())
-    #expect(s.handle(.agentStarted(atLogin: true)) == [.launchESDE, .bringESDEToFront])
+    #expect(s.handle(.agentStarted(atLogin: true)) == [.launchESDE, .bringConsoleToFront])
     #expect(s.active)
 }
 @Test func crashRestartWhileActiveResumes() {
     let file = stateFile()
     _ = activeSession(file: file)
     var restarted = ConsoleSession(settings: standby, stateFile: file)
-    #expect(restarted.handle(.agentStarted(atLogin: false)) == [.bringESDEToFront, .holdStandbyAssertion])
+    #expect(restarted.handle(.agentStarted(atLogin: false)) == [.bringConsoleToFront, .holdStandbyAssertion])
     #expect(restarted.active)
 }
 @Test func crashRestartWhileInactiveDoesNothing() {
@@ -41,12 +41,12 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
 }
 @Test func playWhenInactiveStarts() {
     var s = ConsoleSession(settings: standby, stateFile: stateFile())
-    #expect(s.handle(.play) == [.launchESDE, .bringESDEToFront, .holdStandbyAssertion])
+    #expect(s.handle(.play) == [.launchESDE, .bringConsoleToFront, .holdStandbyAssertion])
     #expect(s.active)
 }
 @Test func wakeWhenActiveRelaunches() {
     var s = activeSession()
-    #expect(s.handle(.wake) == [.launchESDE, .bringESDEToFront])
+    #expect(s.handle(.wake) == [.launchESDE, .bringConsoleToFront])
     #expect(s.active)
 }
 @Test func wakeWhenInactiveDoesNothing() {
@@ -85,7 +85,7 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
 }
 @Test func controllerWakesDisplayInStandby() {
     var s = activeSession()
-    #expect(s.handle(.controllerActivity(displayAsleep: true)) == [.declareUserActivity, .bringESDEToFront])
+    #expect(s.handle(.controllerActivity(displayAsleep: true)) == [.declareUserActivity, .bringConsoleToFront])
     #expect(s.handle(.controllerActivity(displayAsleep: false)) == [])
 }
 @Test func controllerActivityInTrueSleepDoesNothing() {

@@ -13,7 +13,8 @@ public enum ConsoleEvent: Equatable, Sendable {
 
 public enum ConsoleAction: Equatable, Sendable {
     case launchESDE
-    case bringESDEToFront
+    /// The running game (RetroArch) if there is one, otherwise ES-DE.
+    case bringConsoleToFront
     case holdStandbyAssertion
     case releaseStandbyAssertion
     case pauseGame
@@ -49,15 +50,15 @@ public struct ConsoleSession {
         switch event {
         case .agentStarted(atLogin: true):
             active = true
-            return [.launchESDE, .bringESDEToFront] + hold
+            return [.launchESDE, .bringConsoleToFront] + hold
         case .agentStarted(atLogin: false):
-            return active ? [.bringESDEToFront] + hold : []
+            return active ? [.bringConsoleToFront] + hold : []
         case .play:
             guard !active else { return [] }
             active = true
-            return [.launchESDE, .bringESDEToFront] + hold
+            return [.launchESDE, .bringConsoleToFront] + hold
         case .wake:
-            return active ? [.launchESDE, .bringESDEToFront] : []
+            return active ? [.launchESDE, .bringConsoleToFront] : []
         case .combo(.sleep):
             guard active else { return [] }
             return standby ? [.pauseGame, .sleepDisplay] : [.sleepSystem]
@@ -72,7 +73,7 @@ public struct ConsoleSession {
         case .esdeTerminated(byAgent: true):
             return []
         case .controllerActivity(let displayAsleep):
-            return active && standby && displayAsleep ? [.declareUserActivity, .bringESDEToFront] : []
+            return active && standby && displayAsleep ? [.declareUserActivity, .bringConsoleToFront] : []
         case .consoleDisabled:
             active = false
             return [.releaseStandbyAssertion]

@@ -11,11 +11,14 @@ import Testing
     try JSONSerialization.data(withJSONObject: json).write(to: url)
     #expect(try Profile.load(from: url).console == nil)
 }
-@Test func networkCommandsOnlyInConsoleMode() throws {
+@Test func consoleModeNeverOpensTheNetworkCommandPort() throws {
+    // RetroArch binds its command port on every interface (*:55355), so it stays off; console mode pauses
+    // by hiding RetroArch, which pause_nonactive turns into a pause.
     var p = profile()
     p.console = ConsoleSettings(enabled: true, sleep: .standby)
     let on = retroarchKeys(try render(p))
-    #expect(on["network_cmd_enable"] == "true" && on["network_cmd_port"] == "55355")
+    #expect(on["network_cmd_enable"] == "false" && on["network_cmd_port"] == nil)
+    #expect(on["pause_nonactive"] == "true")
     #expect(retroarchKeys(try render(profile()))["network_cmd_enable"] == "false")
     #expect(ConsoleSettings.default == ConsoleSettings(enabled: false, sleep: .standby))
 }

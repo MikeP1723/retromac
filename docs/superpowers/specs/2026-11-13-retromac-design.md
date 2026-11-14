@@ -251,15 +251,15 @@ Each row shows its live status, e.g. "Automatic login: off — FileVault is on".
 - **No conflicts:** neither combo clashes with RetroArch's in-game Select+Start (quit game).
 
 **A game in progress when a combo fires** *(Claude's call)*:
-- **Console standby:** the game is paused through RetroArch's network command interface (`network_cmd_enable`, `PAUSE_TOGGLE`, enabled by the renderer), so it doesn't keep running or playing audio behind a dark screen.
+- **Console standby:** the game is paused by hiding RetroArch (`pause_nonactive = true`, set by the renderer), so it doesn't keep running or playing audio behind a dark screen. Waking with the controller brings RetroArch back, which resumes the game. RetroArch's network command port is never enabled: it binds on every interface (`*:55355`) with no authentication.
 - **True sleep:** nothing extra; macOS suspends everything.
-- **Exit to the desktop:** RetroArch is asked to quit (`QUIT`, which flushes in-game saves), and is terminated only if it hasn't quit within 5 seconds. Then ES-DE quits, and retromac's home screen opens.
+- **Exit to the desktop:** RetroArch is asked to quit the normal macOS way (its `applicationShouldTerminate` runs `CMD_EVENT_QUIT`, which flushes in-game saves), and is force-quit if it hasn't exited within 5 seconds (it can linger idle after saving). Then ES-DE quits, and retromac's home screen opens.
 - **Phase 5:** standalone emulators extend the same "ask, then terminate" list when they ship.
 
 **Login agent behavior** *(the focus and session rules are Claude's calls)*:
 - **A console session** starts at login, and again when **Play** is pressed on retromac's home screen. It ends when the user exits to the desktop, including quitting ES-DE through its own menu, which counts as exiting. retromac never relaunches ES-DE behind a user who chose to leave.
 - **Focus:** ES-DE is brought to the front only at launch and after a wake, never every time it loses focus. That way the wizard's "open System Settings, then Check again" flow and the exit path are never fought.
-- **Waking:** after any wake (system or screen) during a console session, relaunch ES-DE if it isn't running and bring it to the front.
+- **Waking:** after any wake (system or screen) during a console session, relaunch ES-DE if it isn't running, and bring the running game (RetroArch) to the front, or ES-DE when no game is running.
 - **Console standby:** the agent holds a power assertion that stops idle system sleep, while still allowing display sleep, for **as long as a console session is running**. The Mac never idle-sleeps into a state a controller can't wake. The sleep combo turns the display off. A controller button press while it's off declares user activity, which turns the screen back on with ES-DE in front. There's no automatic fall back to true sleep: the user chose standby, and the wizard states the cost ("the Mac stays awake while console mode is running").
 - **True sleep:** the sleep combo puts the Mac to sleep. Normal idle sleep applies.
 - **Turning console mode off:** remove the login agent and release every assertion. The step then shows the same live status rows for automatic login, FileVault and the wake password, with "You may want to turn this back on" and buttons that open each pane. retromac still never changes them itself.
