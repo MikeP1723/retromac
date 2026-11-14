@@ -230,3 +230,66 @@ final class CountingRunner: CommandRunner, @unchecked Sendable {
     let importer = Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: ProcessRunner(), freeSpace: { _ in 1024 })
     #expect(try importer.analyze([zip]).1.map(\.status) == [.unidentified(reason: "not enough free disk space to unpack")])
 }
+
+// MARK: Multi-disc PlayStation sets (Phase 3b)
+
+extension ImportRig {
+    /// "Game (USA)" on two discs, each with its own serial, as Redump lists them.
+    func importTwoDiscDat() throws {
+        try importClrMame("Sony - PlayStation", """
+            game ( name "Game (USA) (Disc 1)" serial "SLUS-00892" rom ( name "a.bin" sha1 A1 ) )
+            game ( name "Game (USA) (Disc 2)" serial "SLUS-00908" rom ( name "b.bin" sha1 B1 ) )
+            """)
+    }
+
+    /// A dropped cue/bin pair whose image boots `serial` (e.g. "SLUS_008.92").
+    func psxDisc(_ stem: String, serial: String) throws -> URL {
+        let folder = drops.appending(path: UUID().uuidString)
+        _ = try isoImage(folder.appending(path: "\(stem).bin"), systemCNF: "BOOT = cdrom:\\\(serial);1\n", raw: true, size: 1 << 20)
+        let cue = folder.appending(path: "\(stem).cue")
+        try write("FILE \"\(stem).bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n", to: cue)
+        return cue
+    }
+}
+
+@Test func multiDiscPS1ImportsAsOneEntry() throws {
+    let rig = try ImportRig()
+    try rig.importTwoDiscDat()
+    let discs = [try rig.psxDisc("ff1", serial: "SLUS_008.92"), try rig.psxDisc("ff2", serial: "SLUS_009.08")]
+    let (session, candidates) = try rig.importer.analyze(discs)
+    let done = try rig.importer.commit(session, candidates)
+    let set = rig.library.appending(path: "psx/Game (USA).m3u")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: set.path).sorted() == [
+        "Game (USA) (Disc 1).bin", "Game (USA) (Disc 1).cue", "Game (USA) (Disc 2).bin", "Game (USA) (Disc 2).cue", "Game (USA).m3u"])
+    #expect(try read(set.appending(path: "Game (USA).m3u")) == "Game (USA) (Disc 1).cue\nGame (USA) (Disc 2).cue\n")
+    #expect(done.map(\.destination) == [set.appending(path: "Game (USA) (Disc 1).cue"), set.appending(path: "Game (USA) (Disc 2).cue")])
+}
+@Test func discTwoInLaterDropJoinsTheSet() throws {
+    let rig = try ImportRig()
+    try rig.importTwoDiscDat()
+    let first = try rig.importer.analyze([try rig.psxDisc("ff1", serial: "SLUS_008.92")])
+    _ = try rig.importer.commit(first.0, first.1)
+    #expect(FileManager.default.fileExists(atPath: rig.library.appending(path: "psx/Game (USA) (Disc 1).cue").path))
+    let second = try rig.importer.analyze([try rig.psxDisc("ff2", serial: "SLUS_009.08")])
+    _ = try rig.importer.commit(second.0, second.1)
+    #expect(try read(rig.library.appending(path: "psx/Game (USA).m3u/Game (USA).m3u"))
+        == "Game (USA) (Disc 1).cue\nGame (USA) (Disc 2).cue\n")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: rig.library.appending(path: "psx").path) == ["Game (USA).m3u"])
+}
+@Test func discInsideSetFolderIsDuplicate() throws {
+    let rig = try ImportRig()
+    try rig.importTwoDiscDat()
+    let both = try rig.importer.analyze([try rig.psxDisc("ff1", serial: "SLUS_008.92"), try rig.psxDisc("ff2", serial: "SLUS_009.08")])
+    _ = try rig.importer.commit(both.0, both.1)
+    let again = try rig.importer.analyze([try rig.psxDisc("again", serial: "SLUS_009.08")])
+    #expect(again.1.map(\.status) == [.duplicate(.psx)])
+}
+@Test func bareBinImportGetsCue() throws {
+    let rig = try ImportRig()
+    let bin = try isoImage(rig.drops.appending(path: "Lone (U).bin"), systemCNF: "BOOT = cdrom:\\SCUS_941.63;1\n", raw: true, size: 1 << 20)
+    let (session, candidates) = try rig.importer.analyze([bin])
+    let done = try rig.importer.commit(session, candidates)
+    let cue = rig.library.appending(path: "psx/Lone (USA).cue")
+    #expect(try read(cue).contains("FILE \"Lone (USA).bin\" BINARY"))
+    #expect(done.map(\.destination) == [cue])
+}

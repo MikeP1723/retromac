@@ -473,7 +473,26 @@ public struct Importer: Sendable {
                 item.files = []
             }
         }
-        return result
+        return Self.organizeDiscSets(result, libraryRoot: libraryRoot)
+    }
+
+    /// Gives new PS1/Saturn games their cue or multi-disc folder; destinations follow any move.
+    /// The games are already filed, so a failure here leaves them as they are.
+    static func organizeDiscSets(_ items: [ImportCandidate], libraryRoot: URL) -> [ImportCandidate] {
+        let touched = Set(items.compactMap { item -> SystemID? in
+            guard item.destination != nil, let system = item.status.system, DiscSets.systems.contains(system) else { return nil }
+            return system
+        })
+        var moves: [URL: URL] = [:]
+        for system in touched {
+            moves.merge((try? DiscSets.organize(libraryRoot.appending(path: system.rawValue))) ?? [:]) { $1 }
+        }
+        guard !moves.isEmpty else { return items }
+        return items.map { item in
+            var item = item
+            if let destination = item.destination, let moved = moves[destination] { item.destination = moved }
+            return item
+        }
     }
 
     /// Files a disc game's set: a shared " (n)" suffix on collisions, each file written to a temp name
