@@ -9,7 +9,57 @@ let usage = """
            retromac-tool apply --profile FILE [--home DIR]
            retromac-tool check-upstream [--write] [--manifest FILE]
            retromac-tool release-manifest --version X --zip-url URL --sha SHA
+           retromac-tool import-dat FILE... [--home DIR]
+           retromac-tool import-games PATH... [--home DIR] [--library DIR] [--dry-run]
     """
+
+/// Positional arguments after the subcommand, skipping options and their values.
+func positional(_ args: [String], valued: Set<String>) -> [String] {
+    var out: [String] = [], skip = false
+    for arg in args.dropFirst() {
+        if skip { skip = false; continue }
+        if valued.contains(arg) { skip = true; continue }
+        if arg.hasPrefix("--") { continue }
+        out.append(arg)
+    }
+    return out
+}
+
+func importDats(_ args: [String]) {
+    let store = DatStore(paths: paths(args))
+    var failed = false
+    for file in positional(args, valued: ["--home"]) {
+        do {
+            for dat in try store.importDats([URL(filePath: file)], runner: ProcessRunner()) {
+                print("\(dat.system.rawValue) \(dat.source) \(dat.version) \(dat.entries.count) games")
+            }
+        } catch {
+            print("FAIL \(file) \(error)")
+            failed = true
+        }
+    }
+    if failed { exit(1) }
+}
+
+func importGames(_ args: [String]) throws {
+    let p = paths(args)
+    let library = option("--library", in: args).map { URL(filePath: $0) }
+        ?? (try? Profile.load(from: p.profile))?.libraryRoot ?? p.defaultLibraryRoot
+    let importer = Importer(libraryRoot: library, dats: DatStore(paths: p), runner: ProcessRunner())
+    let (session, candidates) = try importer.analyze(positional(args, valued: ["--home", "--library"]).map { URL(filePath: $0) })
+    let results = args.contains("--dry-run") ? candidates : try importer.commit(session, candidates)
+    for item in results {
+        let file = item.destination?.lastPathComponent ?? ""
+        switch item.status {
+        case .identified(let system, let name): print("identified \(system.rawValue) \(name)")
+        case .unverified(let system): print("unverified \(system.rawValue) \(file)")
+        case .duplicate(let system): print("duplicate \(system.rawValue) \(file)")
+        case .unidentified(let reason): print("unidentified \(reason) \(item.source)")
+        case .notAGame: print("skip \(item.source)")
+        case .failed(let reason): print("FAIL \(item.source) \(reason)")
+        }
+    }
+}
 
 let defaultManifestPath = "Sources/RetromacCore/Resources/manifest.json"
 
@@ -133,6 +183,10 @@ do {
         print("installed: \(report.installed.joined(separator: ", "))")
         print("skipped: \(report.skipped.joined(separator: ", "))")
         report.warnings.forEach { print("warning: \($0)") }
+    case "import-dat":
+        importDats(args)
+    case "import-games":
+        try importGames(args)
     case "check-upstream":
         try await checkUpstream(args)
     case "release-manifest":
