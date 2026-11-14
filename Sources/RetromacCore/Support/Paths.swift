@@ -57,6 +57,8 @@ public struct Paths: Sendable {
     /// The emulated Xbox's hard disk; it holds game saves, so it's installed once and never replaced.
     public var xemuHDD: URL { xemuSupport.appending(path: "xbox_hdd.qcow2") }
 
+    public var xemuConfig: URL { xemuSupport.appending(path: "xemu/xemu.toml") }
+
     /// Where a manifest data asset is installed.
     public func assetTarget(_ asset: AssetEntry) -> URL {
         switch asset.system {

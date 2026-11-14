@@ -11,6 +11,8 @@ public struct RenderedFile: Equatable, Sendable {
         case esdeSystems(String)
         /// Keys (section → key → value) merged into an INI file; every other line is kept.
         case iniKeys([String: [String: String]])
+        /// Keys (table → key → value) merged into a TOML file; every other line is kept.
+        case tomlKeys([String: [String: TomlValue]])
         /// A file retromac owns entirely.
         case whole(String)
         case directory
@@ -88,6 +90,7 @@ public enum ProfileRenderer {
         }
 
         files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
+        files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
         files.append(RenderedFile(url: paths.esdeFindRules,

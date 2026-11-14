@@ -51,6 +51,7 @@ public struct Applier: Sendable {
             case .esdeSettings(let dir): final = ESDESettings.merge(existing: current, romDirectory: dir)
             case .esdeSystems(let ours): final = try ESDESystems.merge(existing: current, ours: ours)
             case .iniKeys(let keys): final = IniConfig.merge(existing: current ?? "", owned: keys)
+            case .tomlKeys(let keys): final = TomlConfig.merge(existing: current ?? "", owned: keys)
             case .whole(let text): final = text
             case .directory: continue
             }
