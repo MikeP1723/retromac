@@ -130,9 +130,18 @@ struct LibraryStats: Sendable {
             let hasCue = files.contains { $0.pathExtension.lowercased() == "cue" }
             var games = 0
             for file in files {
-                stats.bytes += Int64((try? file.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0)
                 let ext = file.pathExtension.lowercased()
+                if ext == "m3u", let set = try? fm.contentsOfDirectory(at: file, includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
+                                                                         options: [.skipsHiddenFiles]) {
+                    // A multi-disc game's folder (see DiscSets) is one game.
+                    stats.bytes += set.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0) }
+                    games += 1
+                    continue
+                }
+                stats.bytes += Int64((try? file.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0)
                 if ext == "txt" || (hasCue && ext == "bin") { continue }
+                // A bare image that got its own cue (see DiscSets) is counted through the cue.
+                if ["img", "iso"].contains(ext), fm.fileExists(atPath: file.deletingPathExtension().appendingPathExtension("cue").path) { continue }
                 games += 1
             }
             if games > 0 { stats.bySystem[system] = games }

@@ -31,11 +31,20 @@ public struct Paths: Sendable {
     public var retroarchSupport: URL { home.appending(path: "Library/Application Support/RetroArch") }
     public var retroarchConfig: URL { retroarchSupport.appending(path: "config/retroarch.cfg") }
     public var retroarchCores: URL { retroarchSupport.appending(path: "cores") }
+    /// BIOS files; set explicitly in retroarch.cfg, whose default is each game's own folder.
+    public var retroarchSystem: URL { retroarchSupport.appending(path: "system") }
+    /// RetroArch's own default for saves, states and playlists; retromac moves them out (RetroArchDocuments).
+    public var retroarchDocuments: URL { home.appending(path: "Documents/RetroArch") }
     public var globalShaderPreset: URL { retroarchSupport.appending(path: "config/global.slangp") }
     public var retroarchShadersSlang: URL { retroarchSupport.appending(path: "shaders/shaders_slang") }
 
     public func coreOverride(libraryName: String) -> URL {
         retroarchSupport.appending(path: "config/\(libraryName)/\(libraryName).cfg")
+    }
+
+    /// RetroArch reads a core's controller types (input_libretro_device_pN) only from remap files.
+    public func coreRemap(libraryName: String) -> URL {
+        retroarchSupport.appending(path: "config/remaps/\(libraryName)/\(libraryName).rmp")
     }
 
     /// Passed to ES-DE as `--home`; ES-DE keeps its data in `<esdeHome>/ES-DE`.

@@ -4,6 +4,8 @@ import Foundation
 
 public enum ImportStatus: Equatable, Hashable, Sendable {
     case identified(SystemID, name: String)
+    /// A console BIOS, copied to RetroArch's system folder rather than the library.
+    case bios(SystemID, region: String)
     /// Header says which system, but no DAT matched (or none is imported).
     case unverified(SystemID)
     /// Already in the library (or earlier in this drop); nil system for _Unidentified files.
@@ -52,6 +54,7 @@ public struct ImportSummary: Equatable, Sendable {
     public var identified = 0
     public var unverified = 0
     public var unidentified = 0
+    public var bios = 0
     public var duplicates = 0
     public var skipped = 0
     public var failed = 0
@@ -97,13 +100,19 @@ public struct Importer: Sendable {
     let runner: any CommandRunner
     /// Bytes free on the volume holding a folder.
     let freeSpace: @Sendable (URL) -> Int64?
+    /// Where BIOS files go (RetroArch's system folder); nil leaves BIOS files to the normal checks.
+    let biosDirectory: URL?
+    let bios: [BiosFile]
 
     public init(libraryRoot: URL, dats: DatStore, runner: any CommandRunner,
-                freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity) {
+                freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity,
+                biosDirectory: URL? = nil, bios: [BiosFile] = BiosFile.known) {
         self.libraryRoot = libraryRoot
         self.dats = dats
         self.runner = runner
         self.freeSpace = freeSpace
+        self.biosDirectory = biosDirectory
+        self.bios = bios
     }
 
     public static let availableCapacity: @Sendable (URL) -> Int64? = { url in
@@ -140,6 +149,7 @@ public struct Importer: Sendable {
             case .identified(let system, _): summary.identified += 1; summary.bySystem[system, default: 0] += 1
             case .unverified(let system): summary.unverified += 1; summary.bySystem[system, default: 0] += 1
             case .unidentified: summary.unidentified += 1
+            case .bios: summary.bios += 1
             case .duplicate: summary.duplicates += 1
             case .notAGame: summary.skipped += 1
             case .failed: summary.failed += 1
@@ -151,7 +161,7 @@ public struct Importer: Sendable {
 
     static func bytesToCopy(_ item: ImportCandidate) -> Int64 {
         switch item.status {
-        case .identified, .unverified, .unidentified: break
+        case .identified, .unverified, .unidentified, .bios: break
         default: return 0
         }
         let size = { (url: URL) in Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
@@ -171,6 +181,7 @@ public struct Importer: Sendable {
         var seenDiscs: Set<String> = []
         /// "serial:disc" of disc games already in each library folder, from header reads, built on first use.
         var libraryDiscs: [URL: Set<String>] = [:]
+        var libraryNames: [URL: Set<String>] = [:]
         var progress: (@Sendable (Int, Int) -> Void)?
         var total = 0
         var scanned = 0
@@ -197,6 +208,24 @@ public struct Importer: Sendable {
         let ext = file.pathExtension.lowercased()
         if ["zip", "7z"].contains(ext) {
             openArchive(real, source: source, depth: depth, &state)
+            return
+        }
+
+        if let biosDirectory, let (match, data) = BiosFile.match(real, in: bios) {
+            let destination = biosDirectory.appending(path: match.fileName)
+            // The core opens only this exact name, so a suffixed copy would never be used. RetroArch's
+            // folder isn't retromac's: an existing different file there is reported, never replaced.
+            if FileManager.default.fileExists(atPath: destination.path) {
+                if BiosFile.match(destination, in: [match]) != nil {
+                    var item = candidate(source, .duplicate(nil))
+                    item.destination = destination
+                    state.candidates.append(item)
+                } else {
+                    state.candidates.append(failed(source, "a different file named \(match.fileName) is already in RetroArch's system folder"))
+                }
+                return
+            }
+            stage(source, .bios(match.system, region: match.region), bytes: data, destination: destination, checkFolder: false, &state)
             return
         }
 
@@ -353,7 +382,10 @@ public struct Importer: Sendable {
         let discKey = id.serial.map { "\(SerialKey.normalize($0)):\(id.disc ?? 0)" }
         let payload = item.files.last!
         let duplicate: Bool
-        if let discKey {
+        if libraryNames(in: folder, &state).contains("\(name).chd".lowercased()) {
+            // Converted to CHD, which can't be read back for its serial: the same name is the same game.
+            duplicate = true
+        } else if let discKey {
             duplicate = state.seenDiscs.contains("\(system.rawValue):\(discKey)") || libraryDiscs(in: folder, &state).contains(discKey)
             state.seenDiscs.insert("\(system.rawValue):\(discKey)")
         } else {
@@ -364,6 +396,14 @@ public struct Importer: Sendable {
             item.files = []
         }
         state.candidates.append(item)
+    }
+
+    /// Lowercased names of every file in a library folder, including multi-disc folders.
+    func libraryNames(in folder: URL, _ state: inout Analysis) -> Set<String> {
+        if let known = state.libraryNames[folder] { return known }
+        let names = Set(walk(folder).map { $0.0.lastPathComponent.lowercased() })
+        state.libraryNames[folder] = names
+        return names
     }
 
     func libraryDiscs(in folder: URL, _ state: inout Analysis) -> Set<String> {
@@ -384,12 +424,15 @@ public struct Importer: Sendable {
         return size(a) == target
     }
 
-    func stage(_ source: String, _ status: ImportStatus, bytes: Data, destination: URL, _ state: inout Analysis) {
+    /// `checkFolder: false` skips hashing the destination folder for duplicates (the BIOS folder may be
+    /// large and isn't retromac's; its one relevant name is checked by the caller).
+    func stage(_ source: String, _ status: ImportStatus, bytes: Data, destination: URL, checkFolder: Bool = true,
+               _ state: inout Analysis) {
         let sha = Self.sha1(bytes)
         var item = candidate(source, status)
         item.sha1 = sha
         item.destination = destination
-        if let earlier = state.seen[sha] ?? libraryFile(sha, in: destination.deletingLastPathComponent(), &state) {
+        if let earlier = state.seen[sha] ?? (checkFolder ? libraryFile(sha, in: destination.deletingLastPathComponent(), &state) : nil) {
             item.status = .duplicate(status.system)
             item.destination = earlier
             state.candidates.append(item)
@@ -454,7 +497,7 @@ public struct Importer: Sendable {
                 }
                 guard let staged = item.staged, let wanted = item.destination, let sha = item.sha1 else { continue }
                 switch item.status {
-                case .identified, .unverified, .unidentified: break
+                case .identified, .unverified, .unidentified, .bios: break
                 default: continue
                 }
                 if existingMatches(wanted, sha) {
@@ -473,7 +516,26 @@ public struct Importer: Sendable {
                 item.files = []
             }
         }
-        return result
+        return Self.organizeDiscSets(result, libraryRoot: libraryRoot)
+    }
+
+    /// Gives new PS1/Saturn games their cue or multi-disc folder; destinations follow any move.
+    /// The games are already filed, so a failure here leaves them as they are.
+    static func organizeDiscSets(_ items: [ImportCandidate], libraryRoot: URL) -> [ImportCandidate] {
+        let touched = Set(items.compactMap { item -> SystemID? in
+            guard item.destination != nil, let system = item.status.system, DiscSets.systems.contains(system) else { return nil }
+            return system
+        })
+        var moves: [URL: URL] = [:]
+        for system in touched {
+            moves.merge((try? DiscSets.organize(libraryRoot.appending(path: system.rawValue))) ?? [:]) { $1 }
+        }
+        guard !moves.isEmpty else { return items }
+        return items.map { item in
+            var item = item
+            if let destination = item.destination, let moved = moves[destination] { item.destination = moved }
+            return item
+        }
     }
 
     /// Files a disc game's set: a shared " (n)" suffix on collisions, each file written to a temp name

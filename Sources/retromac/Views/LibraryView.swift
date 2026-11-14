@@ -83,6 +83,24 @@ struct LibraryView: View {
                 Text(message).foregroundStyle(message.hasPrefix("Not enough") ? .red : .secondary)
             }
 
+            if games.convertibleCount > 0 || games.converting {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button("Shrink disc games") { Task { await games.convertToCHD() } }
+                                .disabled(games.busy)
+                            if let progress = games.convertProgress {
+                                ProgressView().controlSize(.small)
+                                Text(progress).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                        Text("Converts PlayStation and Saturn discs to CHD, which usually takes about half the space. The first time, retromac installs the chdman tool with Homebrew. Each game takes a minute or two.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             Spacer(minLength: 0)
 
             DisclosureGroup("Game Databases", isExpanded: $showDatabases) {
@@ -112,9 +130,18 @@ struct LibraryView: View {
             }
         }
         .padding()
-        .task { await app.refreshLibraryStats() }
+        .task {
+            await app.refreshLibraryStats()
+            games.refreshConvertible()
+        }
+        .onChange(of: games.converting) { _, converting in
+            if !converting { Task { await app.refreshLibraryStats() } }
+        }
         .onChange(of: games.committing) { _, committing in
-            if !committing { Task { await app.refreshLibraryStats() } }
+            if !committing {
+                games.refreshConvertible()
+                Task { await app.refreshLibraryStats() }
+            }
         }
     }
 
@@ -174,6 +201,7 @@ private struct SummaryCard: View {
 
     private var headline: String {
         let found = summary.identified + summary.unverified
+        if found == 0 && summary.bios > 0 { return "Found \(summary.bios.formatted()) BIOS file\(summary.bios == 1 ? "" : "s") to add" }
         return found == 0 ? "No new games found" : "Found \(found.formatted()) game\(found == 1 ? "" : "s") to import"
     }
 
@@ -181,6 +209,7 @@ private struct SummaryCard: View {
         var parts: [String] = []
         if summary.identified > 0 { parts.append("\(summary.identified.formatted()) found in the databases") }
         if summary.unverified > 0 { parts.append("\(summary.unverified.formatted()) not in a database") }
+        if summary.bios > 0 { parts.append("\(summary.bios.formatted()) BIOS files") }
         if summary.duplicates > 0 { parts.append("\(summary.duplicates.formatted()) already in your library") }
         if summary.unidentified > 0 { parts.append("\(summary.unidentified.formatted()) not recognized") }
         if summary.skipped > 0 { parts.append("\(summary.skipped.formatted()) other files skipped") }
@@ -218,6 +247,7 @@ struct CandidateRow: View {
     private var icon: (name: String, color: Color) {
         switch item.status {
         case .identified: ("checkmark.circle.fill", .green)
+        case .bios: ("cpu", .green)
         case .unverified: ("circle.fill", .yellow)
         case .duplicate, .notAGame: ("minus.circle", .secondary)
         case .unidentified: ("questionmark.circle.fill", .orange)
@@ -230,6 +260,7 @@ struct CandidateRow: View {
         switch item.status {
         case .identified(let system, let title): return "→ \(name(system)) · \(title)"
         case .unverified(let system): return "→ \(name(system)) · \(file) (not in database)"
+        case .bios(let system, let region): return "→ BIOS · \(name(system)) (\(region))"
         case .duplicate: return "already in library"
         case .unidentified(let reason): return "→ _Unidentified (\(reason))"
         case .notAGame: return "not a game file"

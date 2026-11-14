@@ -85,6 +85,7 @@ final class WizardModel {
         guard let manifest, let rules else { return }
         let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
         _ = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
+        DiscSets.organizeLibrary(profile.libraryRoot)
     }
 
     private static func load<T>(_ what: String, into errors: inout [String], _ body: () throws -> T) -> T? {
@@ -113,6 +114,7 @@ final class WizardModel {
             let installer = Installer(manifest: manifest, paths: paths, downloader: URLSessionDownloader(), runner: ProcessRunner())
             let installed = try await installer.install(systems: profile.systems)
             installed.installed.forEach { log.append("Installed \($0)") }
+            installed.removed.forEach { log.append("Removed \($0), no longer used") }
             installed.skipped.forEach { log.append("Already installed: \($0)") }
             installed.warnings.forEach { log.append("Note: \($0)") }
 
@@ -121,6 +123,8 @@ final class WizardModel {
             log.append("Wrote \(report.written.count) files, \(report.unchanged.count) unchanged.")
             if let backup = report.backup { log.append("Previous config backed up to \(backup.path)") }
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
+            // Games filed before PS1/Saturn support (bare images, loose discs) become launchable.
+            DiscSets.organizeLibrary(profile.libraryRoot)
             log.append("Done.")
             applied = true
             notice = nil

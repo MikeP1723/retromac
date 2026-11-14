@@ -5,6 +5,8 @@ public struct ApplyReport: Equatable, Sendable {
     public var written: [URL]
     public var unchanged: [URL]
     public var backup: URL?
+    /// Files left in ~/Documents/RetroArch because their new home already had a copy (see RetroArchDocuments).
+    public var leftInDocuments: [String] = []
 }
 
 public enum ApplyError: Error, Equatable {
@@ -28,6 +30,8 @@ public struct Applier: Sendable {
         if let running = apps.first(where: isRunning) {
             throw ApplyError.appRunning(running)
         }
+        // Before retroarch.cfg points at the new folders, so a failed move never strands a save.
+        let leftInDocuments = try RetroArchDocuments.moveIntoSupport(paths)
         let fm = FileManager.default
         var changed: [(URL, String)] = []
         var newDirs: [URL] = []
@@ -61,6 +65,6 @@ public struct Applier: Sendable {
         for dir in newDirs {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        return ApplyReport(written: changed.map(\.0) + newDirs, unchanged: unchanged, backup: backup)
+        return ApplyReport(written: changed.map(\.0) + newDirs, unchanged: unchanged, backup: backup, leftInDocuments: leftInDocuments)
     }
 }

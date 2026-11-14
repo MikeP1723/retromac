@@ -41,7 +41,19 @@ public enum ProfileRenderer {
             "auto_shaders_enable": "true",
             "input_joypad_driver": "mfi",
             "input_autodetect_enable": "true",
+            "system_directory": paths.retroarchSystem.path,
         ]
+        // RetroArch's defaults are under ~/Documents/RetroArch; keep the user's data with everything else.
+        let support = paths.retroarchSupport, builtin = support.appending(path: "playlists/builtin")
+        keys["savefile_directory"] = support.appending(path: "saves").path
+        keys["savestate_directory"] = support.appending(path: "states").path
+        keys["playlist_directory"] = support.appending(path: "playlists").path
+        for list in ["favorites", "history", "image_history", "music_history", "video_history"] {
+            keys["content_\(list)_path"] = builtin.appending(path: "content_\(list).lpl").path
+        }
+        keys["log_dir"] = support.appending(path: "logs").path
+        keys["recording_output_directory"] = support.appending(path: "records").path
+        keys["recording_config_directory"] = support.appending(path: "records_config").path
         keys.merge(ControllerBinds.keys(for: p.controllers, policy: p.facePolicy)) { $1 }
         files.append(RenderedFile(url: paths.retroarchConfig, kind: .retroarchKeys(keys)))
 
@@ -56,6 +68,14 @@ public enum ProfileRenderer {
                 "run_ahead_enabled": "true",
                 "run_ahead_frames": "1",
                 "run_ahead_secondary_instance": "true",
+            ])))
+        }
+
+        // DualShock (RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 1), beetle-psx input.h): analog games need it.
+        if p.systems.contains(.psx), let core = manifest.core(for: .psx) {
+            files.append(RenderedFile(url: paths.coreRemap(libraryName: core.libraryName), kind: .retroarchKeys([
+                "input_libretro_device_p1": "517",
+                "input_libretro_device_p2": "517",
             ])))
         }
 

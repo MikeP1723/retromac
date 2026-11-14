@@ -59,9 +59,14 @@ struct WizardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 16) {
                 ForEach(WizardModel.Step.allCases, id: \.self) { step in
-                    Text(step.title)
-                        .fontWeight(step == model.step ? .semibold : .regular)
-                        .foregroundStyle(step == model.step ? .primary : .secondary)
+                    Button { model.step = step } label: {
+                        Text(step.title)
+                            .fontWeight(step == model.step ? .semibold : .regular)
+                            .foregroundStyle(step == model.step ? .primary : .secondary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.busy)
                 }
                 Spacer()
                 if app.isSetUp {

@@ -7,8 +7,7 @@ import Testing
     #expect(SystemID.allCases.map(\.rawValue)
         == ["nes", "snes", "genesis", "n64", "psx", "ps2", "saturn", "gc", "wii", "xbox", "wiiu", "switch"])
 }
-@Test func installableIsCartridgeToday() throws {
-    #expect(try Manifest.bundled().installableSystems == [.nes, .snes, .genesis, .n64])
+@Test func cartridgeSystems() {
     #expect(SystemID.allCases.filter(\.isCartridge) == [.nes, .snes, .genesis, .n64])
 }
 @Test func displayNamesCoverAll() {

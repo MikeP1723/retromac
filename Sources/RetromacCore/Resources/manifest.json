@@ -36,6 +36,30 @@
     { "id": "blastem", "version": "v0.6.3-pre", "system": "genesis", "libraryName": "BlastEm", "file": "blastem_libretro.dylib",
       "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/blastem_libretro.dylib.zip", "sha256": null, "license": "GPL-3.0-or-later", "arch": "arm64", "rosetta": false },
     { "id": "mupen64plus_next", "version": "1.0", "system": "n64", "libraryName": "Mupen64Plus-Next", "file": "mupen64plus_next_libretro.dylib",
-      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/mupen64plus_next_libretro.dylib.zip", "sha256": null, "license": "GPL-2.0-or-later", "arch": "arm64", "rosetta": false }
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/mupen64plus_next_libretro.dylib.zip", "sha256": null, "license": "GPL-2.0-or-later", "arch": "arm64", "rosetta": false },
+    {
+      "id": "pcsx_rearmed",
+      "version": "r24",
+      "system": "psx",
+      "libraryName": "PCSX-ReARMed",
+      "file": "pcsx_rearmed_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/pcsx_rearmed_libretro.dylib.zip",
+      "sha256": null,
+      "license": "GPL-2.0-or-later",
+      "arch": "arm64",
+      "rosetta": false
+    },
+    {
+      "id": "mednafen_saturn",
+      "version": "v0.9.45.1",
+      "system": "saturn",
+      "libraryName": "Beetle Saturn",
+      "file": "mednafen_saturn_libretro.dylib",
+      "url": "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/mednafen_saturn_libretro.dylib.zip",
+      "sha256": null,
+      "license": "GPL-2.0-or-later",
+      "arch": "arm64",
+      "rosetta": false
+    }
   ]
 }

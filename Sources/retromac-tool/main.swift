@@ -51,7 +51,7 @@ func importGames(_ args: [String]) throws {
     let p = paths(args)
     let library = option("--library", in: args).map { URL(filePath: $0) }
         ?? (try? Profile.load(from: p.profile))?.libraryRoot ?? p.defaultLibraryRoot
-    let importer = Importer(libraryRoot: library, dats: DatStore(paths: p), runner: ProcessRunner())
+    let importer = Importer(libraryRoot: library, dats: DatStore(paths: p), runner: ProcessRunner(), biosDirectory: p.retroarchSystem)
     let (session, candidates) = try importer.analyze(positional(args, valued: ["--home", "--library"]).map { URL(filePath: $0) })
     let results = args.contains("--dry-run") ? candidates : try importer.commit(session, candidates)
     for item in results {
@@ -59,6 +59,7 @@ func importGames(_ args: [String]) throws {
         switch item.status {
         case .identified(let system, let name): print("identified \(system.rawValue) \(name)")
         case .unverified(let system): print("unverified \(system.rawValue) \(file)")
+        case .bios(let system, let region): print("bios \(system.rawValue) \(region) \(file)")
         case .duplicate(let system): print("duplicate \(system?.rawValue ?? "_Unidentified") \(file)")
         case .unidentified(let reason): print("unidentified \(reason) \(item.source)")
         case .notAGame: print("skip \(item.source)")

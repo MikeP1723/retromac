@@ -12,6 +12,8 @@ public enum InstallError: Error, Equatable {
 public struct InstallReport: Equatable, Sendable {
     public var installed: [String] = []
     public var skipped: [String] = []
+    /// Cores the manifest replaced or dropped, deleted along with their remap files.
+    public var removed: [String] = []
     public var warnings: [String] = []
 }
 
@@ -29,6 +31,8 @@ public struct InstallState: Codable, Equatable, Sendable {
         public var file: String
         /// CRC32 of the installed dylib, compared against libretro's .index-extended.
         public var crc32: String?
+        /// Names the core's remap folder, so a replaced core's remap can be removed; nil for older installs.
+        public var libraryName: String? = nil
     }
 
     public var manifestVersion: Int
@@ -119,9 +123,26 @@ public struct Installer: Sendable {
                 staged = result
             }
             guard let staged else { continue }
-            state.cores[core.id] = .init(version: core.version, sha256: staged.sha256, file: core.file, crc32: staged.crc32)
+            state.cores[core.id] = .init(version: core.version, sha256: staged.sha256, file: core.file, crc32: staged.crc32, libraryName: core.libraryName)
             try state.save(to: paths.state)
             report.installed.append(core.id)
+        }
+
+        let current = Set(manifest.cores.map(\.id)), files = Set(manifest.cores.map(\.file))
+        let names = Set(manifest.cores.map(\.libraryName))
+        for (id, old) in state.cores.sorted(by: { $0.key < $1.key }) where !current.contains(id) {
+            if !files.contains(old.file) { try? fm.removeItem(at: paths.retroarchCores.appending(path: old.file)) }
+            if let name = old.libraryName, !names.contains(name) {
+                // Only the .rmp retromac wrote; the folder may hold the user's per-game remaps, and removeItem
+                // on a folder is recursive, so it goes only when nothing else is left in it.
+                let remap = paths.coreRemap(libraryName: name), folder = remap.deletingLastPathComponent()
+                try? fm.removeItem(at: remap)
+                if (try? fm.contentsOfDirectory(atPath: folder.path))?.isEmpty == true { try? fm.removeItem(at: folder) }
+            }
+            state.cores[id] = nil
+            state.previousCores?[id] = nil
+            try state.save(to: paths.state)
+            report.removed.append(id)
         }
 
         state.manifestVersion = manifest.manifestVersion

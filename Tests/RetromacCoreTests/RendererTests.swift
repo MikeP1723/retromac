@@ -87,3 +87,36 @@ func wholeContent(_ files: [RenderedFile], _ url: URL) -> String? {
     #expect(a == b)
     #expect(a.map(\.url.path) == a.map(\.url.path).sorted())
 }
+
+@Test func systemDirectoryIsSet() throws {
+    #expect(retroarchKeys(try render(profile()))["system_directory"] == "/tmp/h/Library/Application Support/RetroArch/system")
+}
+
+private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [RenderedFile]) {
+    let paths = Paths(home: URL(filePath: "/tmp/h"))
+    return (paths, ProfileRenderer.render(profile(systems: systems), manifest: try Manifest.bundled(), rules: try DisplayRules.bundled(), paths: paths))
+}
+
+@Test func psxGetsDualShockRemap() throws {
+    let (paths, files) = try renderBundled([.psx, .nes])
+    let remap = files.first { $0.url == paths.coreRemap(libraryName: "PCSX-ReARMed") }
+    #expect(remap?.kind == .retroarchKeys(["input_libretro_device_p1": "517", "input_libretro_device_p2": "517"]))
+    let (_, without) = try renderBundled([.nes])
+    #expect(!without.contains { $0.url.pathExtension == "rmp" })
+}
+
+@Test func esdeListsOnlyLaunchableDiscFiles() throws {
+    let xml = ESDESystems.xml(for: [.psx, .saturn], manifest: try Manifest.bundled())
+    for needle in ["<name>psx</name>", "pcsx_rearmed_libretro.dylib", "<name>saturn</name>", "mednafen_saturn_libretro.dylib", ".m3u", ".chd", ".cue"] {
+        #expect(xml.contains(needle), "missing \(needle)")
+    }
+    let psx = try #require(xml.range(of: "<name>psx</name>").map { String(xml[$0.lowerBound...]) })
+    let extensions = try #require(psx.firstMatch(of: /<extension>([^<]*)<\/extension>/)).1
+    #expect(!extensions.contains(".bin") && !extensions.contains(".iso"))
+}
+
+@Test func psxListsPbp() throws {
+    // The importer files PSP-eboot PS1 games as .pbp; PCSX ReARMed plays them.
+    let xml = ESDESystems.xml(for: [.psx], manifest: try Manifest.bundled())
+    #expect(xml.contains(".pbp"))
+}

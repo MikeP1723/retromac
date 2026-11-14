@@ -119,7 +119,10 @@ struct FailingMoveIn: FileOps {
     let rig = try Rig()
     var latest = try await installOldCore(rig)
     var broken = try coreEntry(makeCoreZip(in: rig.dir, name: "snes_libretro.dylib"), id: "bsnes", system: .snes, file: "snes_libretro.dylib")
-    _ = try await installer(manifest(cores: [broken]), rig.paths).install(systems: [.snes])
+    // The installer treats its manifest as the whole catalogue, so keep the installed mesen in it (skipped: same sha).
+    var installed = latest.cores[0]
+    installed.sha256 = try rig.state().cores["mesen"]?.sha256
+    _ = try await installer(manifest(cores: [installed, broken]), rig.paths).install(systems: [.nes, .snes])
     broken.sha256 = String(repeating: "0", count: 64)
     latest.cores.append(broken)
     let before = try rig.state()

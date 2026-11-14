@@ -28,3 +28,10 @@ let supportRoot = "/tmp/h/Library/Application Support/retromac"
     #expect(l.esde.path == "/tmp/h/ES-DE")
     #expect(l.applications.path == "/Applications")
 }
+
+@Test func retroarchSystemPath() {
+    let h = URL(filePath: "/tmp/h")
+    #expect(Paths(home: h).retroarchSystem.path == "/tmp/h/Library/Application Support/RetroArch/system")
+    #expect(Paths(home: h).coreRemap(libraryName: "Beetle PSX HW").path
+        .hasSuffix("RetroArch/config/remaps/Beetle PSX HW/Beetle PSX HW.rmp"))
+}
