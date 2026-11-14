@@ -181,6 +181,7 @@ public struct Importer: Sendable {
         var seenDiscs: Set<String> = []
         /// "serial:disc" of disc games already in each library folder, from header reads, built on first use.
         var libraryDiscs: [URL: Set<String>] = [:]
+        var libraryNames: [URL: Set<String>] = [:]
         var progress: (@Sendable (Int, Int) -> Void)?
         var total = 0
         var scanned = 0
@@ -369,7 +370,10 @@ public struct Importer: Sendable {
         let discKey = id.serial.map { "\(SerialKey.normalize($0)):\(id.disc ?? 0)" }
         let payload = item.files.last!
         let duplicate: Bool
-        if let discKey {
+        if libraryNames(in: folder, &state).contains("\(name).chd".lowercased()) {
+            // Converted to CHD, which can't be read back for its serial: the same name is the same game.
+            duplicate = true
+        } else if let discKey {
             duplicate = state.seenDiscs.contains("\(system.rawValue):\(discKey)") || libraryDiscs(in: folder, &state).contains(discKey)
             state.seenDiscs.insert("\(system.rawValue):\(discKey)")
         } else {
@@ -380,6 +384,14 @@ public struct Importer: Sendable {
             item.files = []
         }
         state.candidates.append(item)
+    }
+
+    /// Lowercased names of every file in a library folder, including multi-disc folders.
+    func libraryNames(in folder: URL, _ state: inout Analysis) -> Set<String> {
+        if let known = state.libraryNames[folder] { return known }
+        let names = Set(walk(folder).map { $0.0.lastPathComponent.lowercased() })
+        state.libraryNames[folder] = names
+        return names
     }
 
     func libraryDiscs(in folder: URL, _ state: inout Analysis) -> Set<String> {

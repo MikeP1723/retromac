@@ -83,6 +83,24 @@ struct LibraryView: View {
                 Text(message).foregroundStyle(message.hasPrefix("Not enough") ? .red : .secondary)
             }
 
+            if games.convertibleCount > 0 || games.converting {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button("Shrink disc games") { Task { await games.convertToCHD() } }
+                                .disabled(games.busy)
+                            if let progress = games.convertProgress {
+                                ProgressView().controlSize(.small)
+                                Text(progress).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                        Text("Converts PlayStation and Saturn discs to CHD, which usually takes about half the space. The first time, retromac installs the chdman tool with Homebrew. Each game takes a minute or two.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
             Spacer(minLength: 0)
 
             DisclosureGroup("Game Databases", isExpanded: $showDatabases) {
@@ -112,9 +130,18 @@ struct LibraryView: View {
             }
         }
         .padding()
-        .task { await app.refreshLibraryStats() }
+        .task {
+            await app.refreshLibraryStats()
+            games.refreshConvertible()
+        }
+        .onChange(of: games.converting) { _, converting in
+            if !converting { Task { await app.refreshLibraryStats() } }
+        }
         .onChange(of: games.committing) { _, committing in
-            if !committing { Task { await app.refreshLibraryStats() } }
+            if !committing {
+                games.refreshConvertible()
+                Task { await app.refreshLibraryStats() }
+            }
         }
     }
 

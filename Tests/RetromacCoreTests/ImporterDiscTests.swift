@@ -293,3 +293,12 @@ extension ImportRig {
     #expect(try read(cue).contains("FILE \"Lone (USA).bin\" BINARY"))
     #expect(done.map(\.destination) == [cue])
 }
+@Test func chdOfSameNameIsDuplicate() throws {
+    let rig = try ImportRig()
+    try rig.importTwoDiscDat()
+    let psx = rig.library.appending(path: "psx")
+    try FileManager.default.createDirectory(at: psx, withIntermediateDirectories: true)
+    try Data("MComprHD".utf8).write(to: psx.appending(path: "Game (USA) (Disc 1).chd"))
+    let (_, candidates) = try rig.importer.analyze([try rig.psxDisc("again", serial: "SLUS_008.92")])
+    #expect(candidates.map(\.status) == [.duplicate(.psx)])
+}

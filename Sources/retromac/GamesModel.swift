@@ -16,7 +16,11 @@ final class GamesModel {
     var analyzing = false
     var committing = false
     var updatingDats = false
-    var busy: Bool { analyzing || committing || updatingDats }
+    var converting = false
+    var busy: Bool { analyzing || committing || updatingDats || converting }
+    /// PS1/Saturn cue sets that could become CHD; 0 without Homebrew, which hides the option.
+    var convertibleCount = 0
+    var convertProgress: String?
     var message: String?
     /// Files scanned so far and the total, while scanning.
     var scanProgress: (scanned: Int, total: Int)?
@@ -153,6 +157,56 @@ final class GamesModel {
         } catch {
             message = "Couldn't add games: \(error.localizedDescription)"
         }
+    }
+
+    func refreshConvertible() {
+        convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
+    }
+
+    /// Converts every PS1/Saturn cue set to CHD, one game at a time; a game that fails keeps its files.
+    func convertToCHD() async {
+        guard !busy else { return }
+        converting = true
+        defer {
+            converting = false
+            convertProgress = nil
+            refreshConvertible()
+        }
+        message = nil
+        let tool = ChdTool(runner: ProcessRunner())
+        if !tool.hasChdman {
+            convertProgress = "Installing chdman with Homebrew…"
+            do {
+                try await Task.detached { try tool.installChdman() }.value
+            } catch {
+                message = "Couldn't install chdman with Homebrew: \(Self.firstLine(error))"
+                return
+            }
+        }
+        let cues = ChdTool.convertible(in: libraryRoot())
+        var failed: [String] = []
+        for (index, cue) in cues.enumerated() {
+            let stem = cue.deletingPathExtension().lastPathComponent
+            convertProgress = "Converting \((index + 1).formatted()) of \(cues.count.formatted()): \(stem)"
+            do {
+                _ = try await Task.detached { try tool.convert(cue: cue) }.value
+            } catch {
+                failed.append(stem)
+            }
+            // Multi-disc playlists now name the .chd.
+            let folder = cue.deletingLastPathComponent()
+            _ = try? DiscSets.organize(folder.pathExtension.lowercased() == "m3u" ? folder.deletingLastPathComponent() : folder)
+        }
+        let converted = cues.count - failed.count
+        message = ([converted > 0 ? "Converted \(converted.formatted()) disc game\(converted == 1 ? "" : "s") to CHD." : nil]
+            + failed.map { "Couldn't convert \($0) — the original files are untouched." }).compactMap { $0 }.joined(separator: "\n")
+    }
+
+    private static func firstLine(_ error: Error) -> String {
+        if case InstallError.commandFailed(_, _, let stderr) = error, let line = stderr.split(separator: "\n").last {
+            return String(line)
+        }
+        return error.localizedDescription
     }
 
     func clear() {
