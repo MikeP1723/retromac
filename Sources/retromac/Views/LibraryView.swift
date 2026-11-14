@@ -174,6 +174,7 @@ private struct SummaryCard: View {
 
     private var headline: String {
         let found = summary.identified + summary.unverified
+        if found == 0 && summary.bios > 0 { return "Found \(summary.bios.formatted()) BIOS file\(summary.bios == 1 ? "" : "s") to add" }
         return found == 0 ? "No new games found" : "Found \(found.formatted()) game\(found == 1 ? "" : "s") to import"
     }
 
@@ -181,6 +182,7 @@ private struct SummaryCard: View {
         var parts: [String] = []
         if summary.identified > 0 { parts.append("\(summary.identified.formatted()) found in the databases") }
         if summary.unverified > 0 { parts.append("\(summary.unverified.formatted()) not in a database") }
+        if summary.bios > 0 { parts.append("\(summary.bios.formatted()) BIOS files") }
         if summary.duplicates > 0 { parts.append("\(summary.duplicates.formatted()) already in your library") }
         if summary.unidentified > 0 { parts.append("\(summary.unidentified.formatted()) not recognized") }
         if summary.skipped > 0 { parts.append("\(summary.skipped.formatted()) other files skipped") }
@@ -218,6 +220,7 @@ struct CandidateRow: View {
     private var icon: (name: String, color: Color) {
         switch item.status {
         case .identified: ("checkmark.circle.fill", .green)
+        case .bios: ("cpu", .green)
         case .unverified: ("circle.fill", .yellow)
         case .duplicate, .notAGame: ("minus.circle", .secondary)
         case .unidentified: ("questionmark.circle.fill", .orange)
@@ -230,6 +233,7 @@ struct CandidateRow: View {
         switch item.status {
         case .identified(let system, let title): return "→ \(name(system)) · \(title)"
         case .unverified(let system): return "→ \(name(system)) · \(file) (not in database)"
+        case .bios(let system, let region): return "→ BIOS · \(name(system)) (\(region))"
         case .duplicate: return "already in library"
         case .unidentified(let reason): return "→ _Unidentified (\(reason))"
         case .notAGame: return "not a game file"

@@ -46,7 +46,7 @@ final class GamesModel {
     static func addable(_ item: ImportCandidate) -> Bool {
         guard item.destination != nil else { return false }
         switch item.status {
-        case .identified, .unverified, .unidentified: return true
+        case .identified, .unverified, .unidentified, .bios: return true
         default: return false
         }
     }
@@ -105,7 +105,8 @@ final class GamesModel {
         let mine = generation
         analyzing = true
         message = nil
-        let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner())
+        let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner(),
+                                biosDirectory: paths.retroarchSystem)
         let urls = dropped
         // Reusing the session keeps already-unpacked archives instead of unpacking them again.
         let previous = session
@@ -135,7 +136,8 @@ final class GamesModel {
         committing = true
         defer { committing = false }
         let committed = dropped
-        let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner())
+        let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner(),
+                                biosDirectory: paths.retroarchSystem)
         let pending = candidates
         do {
             let added = try await Task.detached { try importer.commit(session, pending) }.value

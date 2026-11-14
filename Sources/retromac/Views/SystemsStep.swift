@@ -9,14 +9,36 @@ struct SystemsStep: View {
         Form {
             Section("Set up these systems") {
                 ForEach((try? Manifest.bundled())?.installableSystems ?? [], id: \.self) { system in
-                    Toggle(system.displayName, isOn: Binding(
-                        get: { model.profile.systems.contains(system) },
-                        set: { on in
-                            if on { model.profile.systems.insert(system) } else { model.profile.systems.remove(system) }
-                        }))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(system.displayName, isOn: Binding(
+                            get: { model.profile.systems.contains(system) },
+                            set: { on in
+                                if on { model.profile.systems.insert(system) } else { model.profile.systems.remove(system) }
+                            }))
+                        if let caption = biosCaption(system) {
+                            Text(caption).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }
         .formStyle(.grouped)
+        .task { bios = BiosStatus.present(in: model.paths.retroarchSystem) }
+    }
+
+    @State private var bios: [SystemID: [BiosFile]] = [:]
+
+    private func biosCaption(_ system: SystemID) -> String? {
+        let regions = (bios[system] ?? []).map(\.region).joined(separator: ", ")
+        switch system {
+        case .psx:
+            return regions.isEmpty
+                ? "Works without a BIOS. Adding your PlayStation's BIOS file improves compatibility — add it in Games like any game file."
+                : "BIOS found for: \(regions)"
+        case .saturn:
+            return regions.isEmpty ? "Needs your Saturn's BIOS file to play. Add it in Games like any game file." : "BIOS found for: \(regions)"
+        default:
+            return nil
+        }
     }
 }

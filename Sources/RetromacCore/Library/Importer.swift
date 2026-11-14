@@ -4,6 +4,8 @@ import Foundation
 
 public enum ImportStatus: Equatable, Hashable, Sendable {
     case identified(SystemID, name: String)
+    /// A console BIOS, copied to RetroArch's system folder rather than the library.
+    case bios(SystemID, region: String)
     /// Header says which system, but no DAT matched (or none is imported).
     case unverified(SystemID)
     /// Already in the library (or earlier in this drop); nil system for _Unidentified files.
@@ -52,6 +54,7 @@ public struct ImportSummary: Equatable, Sendable {
     public var identified = 0
     public var unverified = 0
     public var unidentified = 0
+    public var bios = 0
     public var duplicates = 0
     public var skipped = 0
     public var failed = 0
@@ -97,13 +100,19 @@ public struct Importer: Sendable {
     let runner: any CommandRunner
     /// Bytes free on the volume holding a folder.
     let freeSpace: @Sendable (URL) -> Int64?
+    /// Where BIOS files go (RetroArch's system folder); nil leaves BIOS files to the normal checks.
+    let biosDirectory: URL?
+    let bios: [BiosFile]
 
     public init(libraryRoot: URL, dats: DatStore, runner: any CommandRunner,
-                freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity) {
+                freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity,
+                biosDirectory: URL? = nil, bios: [BiosFile] = BiosFile.known) {
         self.libraryRoot = libraryRoot
         self.dats = dats
         self.runner = runner
         self.freeSpace = freeSpace
+        self.biosDirectory = biosDirectory
+        self.bios = bios
     }
 
     public static let availableCapacity: @Sendable (URL) -> Int64? = { url in
@@ -140,6 +149,7 @@ public struct Importer: Sendable {
             case .identified(let system, _): summary.identified += 1; summary.bySystem[system, default: 0] += 1
             case .unverified(let system): summary.unverified += 1; summary.bySystem[system, default: 0] += 1
             case .unidentified: summary.unidentified += 1
+            case .bios: summary.bios += 1
             case .duplicate: summary.duplicates += 1
             case .notAGame: summary.skipped += 1
             case .failed: summary.failed += 1
@@ -151,7 +161,7 @@ public struct Importer: Sendable {
 
     static func bytesToCopy(_ item: ImportCandidate) -> Int64 {
         switch item.status {
-        case .identified, .unverified, .unidentified: break
+        case .identified, .unverified, .unidentified, .bios: break
         default: return 0
         }
         let size = { (url: URL) in Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
@@ -197,6 +207,12 @@ public struct Importer: Sendable {
         let ext = file.pathExtension.lowercased()
         if ["zip", "7z"].contains(ext) {
             openArchive(real, source: source, depth: depth, &state)
+            return
+        }
+
+        if let biosDirectory, let (match, data) = BiosFile.match(real, in: bios) {
+            stage(source, .bios(match.system, region: match.region), bytes: data,
+                  destination: biosDirectory.appending(path: match.fileName), &state)
             return
         }
 
@@ -454,7 +470,7 @@ public struct Importer: Sendable {
                 }
                 guard let staged = item.staged, let wanted = item.destination, let sha = item.sha1 else { continue }
                 switch item.status {
-                case .identified, .unverified, .unidentified: break
+                case .identified, .unverified, .unidentified, .bios: break
                 default: continue
                 }
                 if existingMatches(wanted, sha) {
