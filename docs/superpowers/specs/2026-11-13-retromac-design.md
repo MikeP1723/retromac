@@ -262,6 +262,11 @@ Downloads through `URLSession` aren't quarantined, so Open Anyway isn't needed a
 1. **Switch is detect-and-configure only.** retromac never downloads a Switch emulator and never handles keys or firmware.
 2. **PS2 uses official PCSX2 under Rosetta** until an official arm64 build ships. ARMSX2 stays a possible one-line manifest swap later.
 3. **Cores trust the libretro host** (decided during Phase 1, 2026-11-13). libretro publishes macOS cores only at a mutable `nightly/…/latest/` URL. Apps stay sha-pinned. Cores may omit `sha256` only when hosted on `buildbot.libretro.com`, and the actual sha is recorded in `state.json` on install.
+4. **CHD conversion is optional** (Mike, 2026-11-13). Disc images stay `.cue`/`.bin` by default, which the cores play. If Homebrew is present, the wizard offers to convert discs to CHD and installs `rom-tools` (chdman, GPL-2.0-or-later) through `brew`. Without Homebrew, everything still works. MAME publishes no macOS chdman of its own.
+5. **Phase 3 is split into three plans:**
+   - 3a: the Importer, No-Intro DAT import and the drag-and-drop Games step, for cartridge systems.
+   - 3b: disc systems (Saturn, PS1), Redump DATs, multi-disc `.m3u`, BIOS detection and optional CHD.
+   - 3c: the inbox watcher LaunchAgent.
 
 ## Findings from Phase 1 verification
 
