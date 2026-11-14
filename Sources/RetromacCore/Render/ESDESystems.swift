@@ -14,6 +14,9 @@ public enum ESDESystems {
         .snes: Info(fullname: "Super Nintendo Entertainment System", extensions: ["sfc", "smc", "zip"]),
         .genesis: Info(fullname: "Sega Genesis", extensions: ["md", "gen", "bin", "smd", "zip"]),
         .n64: Info(fullname: "Nintendo 64", extensions: ["z64", "n64", "v64", "zip"]),
+        // Never .bin/.iso: track files and bare images are reached through their .cue (see DiscSets).
+        .psx: Info(fullname: "Sony PlayStation", extensions: ["cue", "chd", "m3u"]),
+        .saturn: Info(fullname: "Sega Saturn", extensions: ["cue", "chd", "m3u"]),
     ]
 
     public static func xml(for systems: Set<SystemID>, manifest: Manifest) -> String {

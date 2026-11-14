@@ -10,3 +10,11 @@ import Testing
     #expect(Set(m.apps.map(\.id)) == ["retroarch", "esde"])
     #expect(m.manifestVersion == 1); #expect(m.minAppVersion == "0.1.0")
 }
+
+@Test func discCoresAreInstallable() throws {
+    let manifest = try Manifest.bundled()
+    #expect(manifest.installableSystems == [.nes, .snes, .genesis, .n64, .psx, .saturn])
+    #expect(manifest.core(for: .psx)?.libraryName == "Beetle PSX HW")
+    #expect(manifest.core(for: .saturn)?.libraryName == "Beetle Saturn")
+    #expect(manifest.core(for: .saturn)?.license == "GPL-2.0-or-later")
+}
