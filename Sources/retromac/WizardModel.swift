@@ -48,7 +48,7 @@ final class WizardModel {
                                                    distanceInches: saved.display.distanceInches)
             profile = saved
         } else {
-            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set(SystemID.allCases),
+            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.installableSystems ?? []),
                               controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
         }
         profile.controllers = ControllerDetector.detect()

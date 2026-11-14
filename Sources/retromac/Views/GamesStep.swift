@@ -15,7 +15,7 @@ struct GamesStep: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(SystemID.allCases, id: \.self) { system in
                         HStack {
-                            Text(SystemsStep.names[system] ?? system.rawValue)
+                            Text(system.displayName)
                             Spacer()
                             if let dat = games.dats[system] {
                                 Text("No-Intro \(dat.version) · \(dat.entries.count.formatted()) games").foregroundStyle(.secondary)
@@ -101,7 +101,7 @@ private struct CandidateRow: View {
         }
     }
 
-    private func name(_ system: SystemID) -> String { SystemsStep.names[system] ?? system.rawValue }
+    private func name(_ system: SystemID) -> String { system.displayName }
 
     private var icon: (name: String, color: Color) {
         switch item.status {

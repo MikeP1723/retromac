@@ -99,4 +99,9 @@ public struct Manifest: Codable, Equatable, Sendable {
     public func core(for system: SystemID) -> CoreEntry? {
         cores.first { $0.system == system }
     }
+
+    /// Systems retromac can set up an emulator for; others are only recognized and filed.
+    public var installableSystems: [SystemID] {
+        SystemID.allCases.filter { core(for: $0) != nil }
+    }
 }
