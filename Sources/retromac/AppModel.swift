@@ -114,6 +114,9 @@ final class AppModel {
         }
         do {
             let folder = try await Task.detached { try NetworkShare().libraryFolder(for: library) }.value
+            // The mount can wait on a login prompt or a timeout; if the library was turned off or switched
+            // meanwhile, this result is stale (adopting it would make the share a writable local library).
+            guard wizard.profile.networkLibrary == library else { return true }
             // A new mount point (roms-1) is adopted only if the configs apply; otherwise ES-DE would keep the old
             // path while the profile said the new one, and nothing would ever re-apply.
             if !wizard.profile.libraryIs(folder) {
@@ -128,6 +131,7 @@ final class AppModel {
             await refreshLibraryStats()
             return true
         } catch {
+            guard wizard.profile.networkLibrary == library else { return true }
             networkStatus = .notConnected(Self.describe(error))
             await refreshLibraryStats()
             return false
