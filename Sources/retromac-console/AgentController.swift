@@ -197,7 +197,7 @@ final class AgentController {
         // or mounted somewhere new (configs still name the old path), retromac's home screen takes over: it
         // shows "isn't connected", or re-points everything and Play continues.
         if let profile = try? Profile.load(from: paths.profile), let library = profile.networkLibrary {
-            let folder = try? await Task.detached { try NetworkShare().libraryFolder(for: library) }.value
+            let folder = try? await Task.detached { try NetworkShare(mounter: NetFSMounter(allowUI: false)).libraryFolder(for: library) }.value
             guard folder?.standardizedFileURL == profile.libraryRoot.standardizedFileURL else {
                 openHome()
                 return

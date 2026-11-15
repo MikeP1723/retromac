@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 @testable import RetromacCore
+import NetFS
 
 final class FakeMounter: ShareMounter, @unchecked Sendable {
     private let lock = NSLock()
@@ -65,4 +66,11 @@ private func library(_ text: String) -> NetworkLibrary {
         #expect(try NetworkShare(mounter: mounter).libraryFolder(for: library(typed)).path == point.path, "\(typed)")
         #expect(mounter.calls.isEmpty, "\(typed)")
     }
+}
+
+@Test func onlyTheAppMayShowTheServerLogin() {
+    // The console agent mounts with no UI: its play notification is unauthenticated, so any local process
+    // could otherwise pop a server login prompt (over ES-DE at login). retromac.app's Reconnect shows it.
+    #expect(NetFSMounter.openOptions(allowUI: true)[kNAUIOptionKey as String] as? String == kNAUIOptionAllowUI as String)
+    #expect(NetFSMounter.openOptions(allowUI: false)[kNAUIOptionKey as String] as? String == kNAUIOptionNoUI as String)
 }

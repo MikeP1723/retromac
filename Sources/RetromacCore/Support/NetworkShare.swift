@@ -20,11 +20,20 @@ public protocol ShareMounter: Sendable {
 /// Mounts through NetFS with macOS's own login UI allowed: macOS asks for the password and can keep it in
 /// the Keychain, so retromac never handles it.
 public struct NetFSMounter: ShareMounter {
-    public init() {}
+    /// Whether macOS may show its server login. Only retromac.app allows it; the console agent doesn't, since
+    /// its play notification is unauthenticated and the prompt could appear over ES-DE.
+    let allowUI: Bool
+
+    public init(allowUI: Bool = true) { self.allowUI = allowUI }
+
+    static func openOptions(allowUI: Bool) -> NSMutableDictionary {
+        let open = NSMutableDictionary()
+        open[kNAUIOptionKey] = allowUI ? kNAUIOptionAllowUI : kNAUIOptionNoUI
+        return open
+    }
 
     public func mount(_ share: URL) throws -> URL {
-        let open = NSMutableDictionary()
-        open[kNAUIOptionKey] = kNAUIOptionAllowUI
+        let open = Self.openOptions(allowUI: allowUI)
         var points: Unmanaged<CFArray>?
         let status = NetFSMountURLSync(share as CFURL, nil, nil, nil, open, nil, &points)
         if status == 0, let point = (points?.takeRetainedValue() as? [String])?.first {
