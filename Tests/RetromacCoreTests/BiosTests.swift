@@ -74,7 +74,7 @@ extension ImportRig {
     #expect(BiosStatus.present(in: dir, known: [saturnUS]) == [.saturn: [saturnUS]])
 }
 @Test func knownTableMatchesLibretro() {
-    #expect(BiosFile.known.map(\.fileName) == ["scph5500.bin", "scph5501.bin", "scph5502.bin", "sega_101.bin", "mpr-17933.bin"])
+    #expect(BiosFile.known.filter { $0.system != .xbox }.map(\.fileName) == ["scph5500.bin", "scph5501.bin", "scph5502.bin", "sega_101.bin", "mpr-17933.bin"])
     #expect(BiosFile.known.first { $0.fileName == "scph5501.bin" }?.md5 == "490f666e1afb15b7362b406ed1cea246")
     #expect(BiosFile.known.first { $0.fileName == "sega_101.bin" }?.md5 == "85ec9ca47d8f6807718151cbcca8b964")
 }
@@ -93,4 +93,35 @@ extension ImportRig {
     _ = try importer.commit(session, candidates)
     #expect(try FileManager.default.contentsOfDirectory(atPath: rig.biosDir.path) == ["mpr-17933.bin"])
     #expect(try Data(contentsOf: existing) == fakeBios(seed: 3))
+}
+
+private func fakeData(_ count: Int, seed: UInt8) -> Data {
+    Data((0..<count).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ Int(seed)) })
+}
+
+@Test func xboxBiosOfDifferentSizesAreRecognized() throws {
+    let dir = try makeTempDir()
+    let mcpx = fakeData(512, seed: 3), flash = fakeData(262_144, seed: 4)
+    let table = [BiosFile(system: .xbox, fileName: "mcpx_1.0.bin", region: "All", md5: md5(mcpx), size: 512),
+                 BiosFile(system: .xbox, fileName: "Complex_4627.bin", region: "All", md5: md5(flash), size: 262_144)]
+    try mcpx.write(to: dir.appending(path: "a.bin")); try flash.write(to: dir.appending(path: "b.bin"))
+    #expect(BiosFile.match(dir.appending(path: "a.bin"), in: table)?.0.fileName == "mcpx_1.0.bin")
+    #expect(BiosFile.match(dir.appending(path: "b.bin"), in: table)?.0.fileName == "Complex_4627.bin")
+}
+@Test func fileOfAnUnknownSizeIsNeverHashed() throws {
+    let dir = try makeTempDir()
+    let data = fakeData(1000, seed: 5)
+    try data.write(to: dir.appending(path: "c.bin"))
+    let table = [BiosFile(system: .xbox, fileName: "x.bin", region: "All", md5: md5(data), size: 512)]
+    #expect(BiosFile.match(dir.appending(path: "c.bin"), in: table) == nil)
+}
+@Test func xboxBiosStatusNamesWhatIsMissing() throws {
+    let dir = try makeTempDir()
+    let mcpx = fakeData(512, seed: 3), flash = fakeData(262_144, seed: 4)
+    let table = [BiosFile(system: .xbox, fileName: "mcpx_1.0.bin", region: "All", md5: md5(mcpx), size: 512),
+                 BiosFile(system: .xbox, fileName: "Complex_4627.bin", region: "All", md5: md5(flash), size: 262_144)]
+    try mcpx.write(to: dir.appending(path: "mcpx_1.0.bin"))
+    #expect(BiosStatus.present(in: dir, known: table)[.xbox]?.map(\.fileName) == ["mcpx_1.0.bin"])
+    #expect(BiosStatus.missing(.xbox, in: dir, known: table) == ["Complex_4627.bin"])
+    #expect(BiosFile.known.filter { $0.system == .xbox }.map(\.fileName) == ["mcpx_1.0.bin", "Complex_4627.bin"])
 }

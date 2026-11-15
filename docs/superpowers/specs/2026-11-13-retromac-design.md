@@ -254,7 +254,7 @@ Each row shows its live status, e.g. "Automatic login: off — FileVault is on".
 - **Console standby:** the game is paused by hiding RetroArch (`pause_nonactive = true`, set by the renderer), so it doesn't keep running or playing audio behind a dark screen. Waking with the controller brings RetroArch back, which resumes the game. RetroArch's network command port is never enabled: it binds on every interface (`*:55355`) with no authentication.
 - **True sleep:** nothing extra; macOS suspends everything.
 - **Exit to the desktop:** RetroArch is asked to quit the normal macOS way (its `applicationShouldTerminate` runs `CMD_EVENT_QUIT`, which flushes in-game saves), and is force-quit if it hasn't exited within 5 seconds (it can linger idle after saving). Then ES-DE quits, and retromac's home screen opens.
-- **Phase 5:** standalone emulators extend the same "ask, then terminate" list when they ship.
+- **Standalone emulators** (Dolphin, xemu, and later PCSX2) are on the same "ask, then terminate" list: `ESDESystems.emulatorApps`, RetroArch first.
 
 **Login agent behavior** *(the focus and session rules are Claude's calls)*:
 - **A console session** starts at login, and again when **Play** is pressed on retromac's home screen. It ends when the user exits to the desktop, including quitting ES-DE through its own menu, which counts as exiting. retromac never relaunches ES-DE behind a user who chose to leave.

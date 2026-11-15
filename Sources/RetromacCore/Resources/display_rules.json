@@ -1,8 +1,48 @@
 {
   "crtTiers": [
-    { "minHeightPx": 2160, "maxPPD": 100, "preset": { "path": "crt/crt-guest-advanced.slangp", "license": "GPL-2.0-or-later" } },
-    { "minHeightPx": 1080, "maxPPD": null, "preset": { "path": "crt/crt-easymode.slangp", "license": "GPL-1.0-or-later" } }
+    {
+      "minHeightPx": 2160,
+      "maxPPD": 100,
+      "preset": {
+        "path": "crt/crt-guest-advanced.slangp",
+        "license": "GPL-2.0-or-later"
+      }
+    },
+    {
+      "minHeightPx": 1080,
+      "maxPPD": null,
+      "preset": {
+        "path": "crt/crt-easymode.slangp",
+        "license": "GPL-1.0-or-later"
+      }
+    }
   ],
-  "smoothPreset": { "path": "pixel-art-scaling/sharp-bilinear-simple.slangp", "license": "LicenseRef-PublicDomain" },
-  "runAheadSystems": ["nes", "snes", "genesis"]
+  "smoothPreset": {
+    "path": "pixel-art-scaling/sharp-bilinear-simple.slangp",
+    "license": "LicenseRef-PublicDomain"
+  },
+  "runAheadSystems": [
+    "nes",
+    "snes",
+    "genesis"
+  ],
+  "internalScale": {
+    "gc": {
+      "nativeHeight": 528,
+      "maxScale": 5
+    },
+    "wii": {
+      "nativeHeight": 528,
+      "maxScale": 5
+    },
+    "xbox": {
+      "nativeHeight": 480,
+      "maxScale": 4
+    }
+  },
+  "baseChips": [
+    "Apple M1",
+    "Apple M2"
+  ],
+  "baseChipMaxScale": 3
 }

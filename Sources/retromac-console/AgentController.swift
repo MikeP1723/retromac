@@ -161,12 +161,14 @@ final class AgentController {
             case .sleepDisplay: Power.sleepDisplay()
             case .sleepSystem: Power.sleepSystem()
             case .declareUserActivity: Power.declareUserActivity()
-            case .quitRetroArch(let grace):
-                // A normal quit runs RetroArch's CMD_EVENT_QUIT, which flushes in-game saves; it can then
-                // linger idle after saving, so it's force-quit after the grace period.
-                guard let game = running("RetroArch.app") else { continue }
-                game.terminate()
-                await forceQuit("RetroArch.app", after: grace)
+            case .quitEmulators(let grace):
+                // A normal quit lets each emulator save (RetroArch's runs CMD_EVENT_QUIT, which flushes in-game
+                // saves); any still running after the grace period (RetroArch can linger idle) is force-quit.
+                for name in ESDESystems.emulatorApps {
+                    guard let emulator = running(name) else { continue }
+                    emulator.terminate()
+                    await forceQuit(name, after: grace)
+                }
             case .quitESDE(let grace):
                 guard let esde = running("ES-DE.app") else { continue }
                 quittingESDE = true

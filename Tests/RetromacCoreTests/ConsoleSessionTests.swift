@@ -65,7 +65,7 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
 }
 @Test func exitComboQuitsEverything() {
     var s = activeSession()
-    #expect(s.handle(.combo(.exit)) == [.quitRetroArch(graceSeconds: 5), .quitESDE(graceSeconds: 5), .releaseStandbyAssertion, .openHome])
+    #expect(s.handle(.combo(.exit)) == [.quitEmulators(graceSeconds: 5), .quitESDE(graceSeconds: 5), .releaseStandbyAssertion, .openHome])
     #expect(!s.active)
 }
 @Test func combosWhenInactiveDoNothing() {
@@ -109,4 +109,9 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
     var s = activeSession()
     _ = s.handle(.combo(.sleep))
     #expect(s.handle(.combo(.sleep)) == [.pauseGame, .sleepDisplay])
+}
+
+@Test func exitQuitsEveryEmulatorRetromacLaunches() {
+    // RetroArch first, then each standalone ES-DE can launch: the exit combo's "ask, then terminate" list.
+    #expect(ESDESystems.emulatorApps == ["RetroArch.app", "Dolphin.app", "xemu.app"])
 }

@@ -43,12 +43,30 @@ public struct AppEntry: Codable, Equatable, Sendable {
     public var rosetta: Bool
     public var appName: String
     public var upstream: Upstream?
+    /// A standalone emulator's systems: installed only when one of them is selected. nil = always.
+    public var systems: [SystemID]?
 
     public init(id: String, version: String, url: URL, sha256: String, license: String,
-                arch: Arch, rosetta: Bool, appName: String, upstream: Upstream? = nil) {
+                arch: Arch, rosetta: Bool, appName: String, upstream: Upstream? = nil, systems: [SystemID]? = nil) {
         self.id = id; self.version = version; self.url = url; self.sha256 = sha256
         self.license = license; self.arch = arch; self.rosetta = rosetta
-        self.appName = appName; self.upstream = upstream
+        self.appName = appName; self.upstream = upstream; self.systems = systems
+    }
+}
+
+/// A data file an emulator needs (a .zip at `url` holding `fileName`), installed once and never replaced.
+public struct AssetEntry: Codable, Equatable, Sendable {
+    public var id: String
+    public var version: String
+    public var url: URL
+    public var sha256: String
+    public var license: String
+    public var system: SystemID
+    public var fileName: String
+
+    public init(id: String, version: String, url: URL, sha256: String, license: String, system: SystemID, fileName: String) {
+        self.id = id; self.version = version; self.url = url; self.sha256 = sha256
+        self.license = license; self.system = system; self.fileName = fileName
     }
 }
 
@@ -81,12 +99,25 @@ public struct Manifest: Codable, Equatable, Sendable {
     public var minAppVersion: String
     public var apps: [AppEntry]
     public var cores: [CoreEntry]
+    public var assets: [AssetEntry]
     public var retromac: SelfEntry?
 
     public init(schemaVersion: Int, manifestVersion: Int, minAppVersion: String,
-                apps: [AppEntry], cores: [CoreEntry], retromac: SelfEntry? = nil) {
+                apps: [AppEntry], cores: [CoreEntry], assets: [AssetEntry] = [], retromac: SelfEntry? = nil) {
         self.schemaVersion = schemaVersion; self.manifestVersion = manifestVersion
-        self.minAppVersion = minAppVersion; self.apps = apps; self.cores = cores; self.retromac = retromac
+        self.minAppVersion = minAppVersion; self.apps = apps; self.cores = cores; self.assets = assets; self.retromac = retromac
+    }
+
+    /// `assets` is optional in JSON, so manifests from before it keep decoding.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        manifestVersion = try c.decode(Int.self, forKey: .manifestVersion)
+        minAppVersion = try c.decode(String.self, forKey: .minAppVersion)
+        apps = try c.decode([AppEntry].self, forKey: .apps)
+        cores = try c.decode([CoreEntry].self, forKey: .cores)
+        assets = try c.decodeIfPresent([AssetEntry].self, forKey: .assets) ?? []
+        retromac = try c.decodeIfPresent(SelfEntry.self, forKey: .retromac)
     }
 
     public static func bundled() throws -> Manifest {
@@ -100,8 +131,13 @@ public struct Manifest: Codable, Equatable, Sendable {
         cores.first { $0.system == system }
     }
 
+    /// The standalone emulator for a system that has no core.
+    public func app(for system: SystemID) -> AppEntry? {
+        apps.first { $0.systems?.contains(system) == true }
+    }
+
     /// Systems retromac can set up an emulator for; others are only recognized and filed.
     public var installableSystems: [SystemID] {
-        SystemID.allCases.filter { core(for: $0) != nil }
+        SystemID.allCases.filter { core(for: $0) != nil || app(for: $0) != nil }
     }
 }

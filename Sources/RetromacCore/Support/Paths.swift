@@ -50,6 +50,23 @@ public struct Paths: Sendable {
         retroarchSupport.appending(path: "config/remaps/\(libraryName)/\(libraryName).rmp")
     }
 
+    /// Dolphin's user folder on macOS (its default; retromac doesn't move it).
+    public var dolphinConfig: URL { home.appending(path: "Library/Application Support/Dolphin/Config") }
+    /// xemu's own folder (`SDL_GetPrefPath("xemu", "xemu")` is `xemu/xemu` inside it).
+    public var xemuSupport: URL { home.appending(path: "Library/Application Support/xemu") }
+    /// The emulated Xbox's hard disk; it holds game saves, so it's installed once and never replaced.
+    public var xemuHDD: URL { xemuSupport.appending(path: "xbox_hdd.qcow2") }
+
+    public var xemuConfig: URL { xemuSupport.appending(path: "xemu/xemu.toml") }
+
+    /// Where a manifest data asset is installed.
+    public func assetTarget(_ asset: AssetEntry) -> URL {
+        switch asset.system {
+        case .xbox: xemuSupport.appending(path: asset.fileName)
+        default: root.appending(path: "assets/\(asset.fileName)")
+        }
+    }
+
     /// Passed to ES-DE as `--home`; ES-DE keeps its data in `<esdeHome>/ES-DE`.
     public var esdeHome: URL { root }
     public var esdeRoot: URL { esdeHome.appending(path: "ES-DE") }

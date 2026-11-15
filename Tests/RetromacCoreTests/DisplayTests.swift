@@ -43,3 +43,19 @@ let monitor720 = DisplayProfile(widthPx: 1280, heightPx: 720, refreshHz: 60, hdr
     #expect(ControllerKind(productCategory: "Switch Pro Controller") == .nintendo)
     #expect(ControllerKind(productCategory: "8BitDo Something") == .generic)
 }
+
+private let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, hdr: false, vrr: false, diagonalInches: 34, distanceInches: 30)
+
+@Test func internalScaleFromDisplayHeight() throws {
+    let rules = try DisplayRules.bundled()
+    #expect(rules.internalScale(for: .gc, display: qhd, chip: "Apple M4 Pro") == 3)
+    #expect(rules.internalScale(for: .xbox, display: qhd, chip: "Apple M4 Pro") == 3)
+    #expect(rules.internalScale(for: .gc, display: tv65_4k, chip: "Apple M4 Pro") == 5)
+    #expect(rules.internalScale(for: .xbox, display: tv65_4k, chip: "Apple M4 Pro") == 4)
+    #expect(rules.internalScale(for: .nes, display: tv65_4k, chip: "Apple M4 Pro") == nil)
+}
+@Test func baseChipCapsScale() throws {
+    let rules = try DisplayRules.bundled()
+    #expect(rules.internalScale(for: .gc, display: tv65_4k, chip: "Apple M1") == 3)
+    #expect(rules.internalScale(for: .gc, display: tv65_4k, chip: "Apple M1 Pro") == 5)
+}

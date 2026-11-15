@@ -66,3 +66,10 @@ import Testing
     m.retromac?.url = URL(string: "https://github.com/MikeP1723/retromac/releases/download/v0.2.0/retromac.zip")!
     #expect(ManifestPolicy.violations(m).isEmpty)
 }
+
+@Test func assetFromUnlistedHostIsRejected() {
+    var m = manifest()
+    m.assets = [AssetEntry(id: "x", version: "1", url: URL(string: "https://evil.example/x.zip")!, sha256: String(repeating: "0", count: 64),
+                           license: "MIT", system: .xbox, fileName: "x")]
+    #expect(ManifestPolicy.violations(m).contains { $0.contains("evil.example") })
+}

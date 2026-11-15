@@ -84,7 +84,7 @@ public struct Installer: Sendable {
         let fm = FileManager.default
         removeStaleStaging()
 
-        for app in manifest.apps {
+        for app in manifest.apps where app.systems.map({ !systems.isDisjoint(with: $0) }) ?? true {
             let target = paths.applications.appending(path: app.appName)
             if fm.fileExists(atPath: target.path) {
                 let installed = Self.bundleVersion(of: target) ?? "unknown"
@@ -145,6 +145,21 @@ public struct Installer: Sendable {
             report.removed.append(id)
         }
 
+        // Data an emulator needs, installed once: xemu's hard disk image holds the user's saves.
+        for asset in manifest.assets where systems.contains(asset.system) {
+            let target = paths.assetTarget(asset)
+            guard !fm.fileExists(atPath: target.path) else { continue }
+            try await withTempDir { tmp in
+                let zip = try await fetch(asset.url, id: asset.id, sha256: asset.sha256, into: tmp)
+                let out = tmp.appending(path: "out")
+                try runner.run("/usr/bin/ditto", ["-x", "-k", zip.path, out.path])
+                guard let file = Self.find(asset.fileName, under: out) else { throw InstallError.fileNotFoundInArchive(asset.fileName) }
+                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.moveItem(at: file, to: target)
+            }
+            report.installed.append(asset.id)
+        }
+
         state.manifestVersion = manifest.manifestVersion
         try state.save(to: paths.state)
         return report
@@ -159,6 +174,16 @@ public struct Installer: Sendable {
         do {
             try await withTempDir { tmp in
                 let dmg = try await fetch(app.url, id: app.id, sha256: app.sha256, into: tmp)
+                if app.url.pathExtension.lowercased() == "zip" {
+                    // xemu ships a zip with the app (and its LICENSE.txt) at the top level.
+                    let out = tmp.appending(path: "out")
+                    try runner.run("/usr/bin/ditto", ["-x", "-k", dmg.path, out.path])
+                    let source = [out.appending(path: app.appName)]
+                        + ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? []).map { $0.appending(path: app.appName) }
+                    guard let app = source.first(where: { fm.fileExists(atPath: $0.path) }) else { throw InstallError.appNotFoundInImage(app.appName) }
+                    try runner.run("/usr/bin/ditto", [app.path, staging.appending(path: app.lastPathComponent).path])
+                    return
+                }
                 let mount = tmp.appending(path: "mnt")
                 // No -quiet: it silently declines a dmg license agreement (ES-DE ships one).
                 // Choosing to install the app is the acceptance; answer the prompt with Y.

@@ -27,6 +27,42 @@
       "upstream": { "kind": "gitlabRelease", "project": "es-de/emulationstation-de",
                     "assetPattern": "^ES-DE_.*-arm64\\.dmg$" }
     }
+,
+    {
+      "id": "dolphin",
+      "version": "2609",
+      "url": "https://dl.dolphin-emu.org/releases/2609/dolphin-2609-universal.dmg",
+      "sha256": "b8910a6f8710cbe93b916f5b3867a46e67e49aa8272657d282d4accae359cd6b",
+      "license": "GPL-2.0-or-later",
+      "arch": "universal",
+      "rosetta": false,
+      "appName": "Dolphin.app",
+      "systems": ["gc", "wii"]
+    },
+    {
+      "id": "xemu",
+      "version": "0.8.139",
+      "url": "https://github.com/xemu-project/xemu/releases/download/v0.8.139/xemu-0.8.139-macos-universal.zip",
+      "sha256": "9817aaa5e187a698416271a6ddc083a40d7ff5e09c3231cff32a692638c7427d",
+      "license": "GPL-2.0-only",
+      "arch": "universal",
+      "rosetta": false,
+      "appName": "xemu.app",
+      "systems": ["xbox"],
+      "upstream": { "kind": "githubRelease", "project": "xemu-project/xemu",
+                    "assetPattern": "^xemu-[0-9.]+-macos-universal\\.zip$" }
+    }
+  ],
+  "assets": [
+    {
+      "id": "xemu-hdd",
+      "version": "1.0",
+      "url": "https://github.com/xemu-project/xemu-hdd-image/releases/download/1.0/xbox_hdd.qcow2.zip",
+      "sha256": "d9f5a4c1224ff24cf9066067bda70cc8b9c874ea22b9c542eb2edbfc4621bb39",
+      "license": "LicenseRef-xemu-hdd-image-copyright-free",
+      "system": "xbox",
+      "fileName": "xbox_hdd.qcow2"
+    }
   ],
   "cores": [
     { "id": "mesen", "version": "0.9.9", "system": "nes", "libraryName": "Mesen", "file": "mesen_libretro.dylib",
