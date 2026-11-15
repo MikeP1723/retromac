@@ -108,3 +108,16 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     #expect(p.libraryIs(URL(filePath: "/Volumes/roms")))
     #expect(!p.libraryIs(URL(filePath: "/Volumes/roms-1")))
 }
+@Test func aBrowsedFolderBecomesItsShareAddress() {
+    // Picked in the folder panel: /Volumes/roms/retro on Finder's guest mount of petersoft's roms share.
+    let address = NetworkLibrary.address(for: URL(filePath: "/Volumes/roms/retro/snes", directoryHint: .isDirectory),
+                                         volume: URL(filePath: "/Volumes/roms", directoryHint: .isDirectory),
+                                         remount: URL(string: "smb://GUEST:@petersoft._smb._tcp.local/roms")!)
+    #expect(address?.absoluteString == "smb://GUEST@petersoft._smb._tcp.local/roms/retro/snes")
+    let root = NetworkLibrary.address(for: URL(filePath: "/Volumes/My Games", directoryHint: .isDirectory),
+                                      volume: URL(filePath: "/Volumes/My Games", directoryHint: .isDirectory),
+                                      remount: URL(string: "smb://nas/My%20Games")!)
+    #expect(root?.absoluteString == "smb://nas/My%20Games")
+    #expect(NetworkLibrary.address(for: URL(filePath: "/Volumes/x/a"), volume: URL(filePath: "/Volumes/x"),
+                                   remount: URL(string: "afp://nas/x")!) == nil)
+}

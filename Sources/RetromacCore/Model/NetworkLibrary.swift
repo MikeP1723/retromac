@@ -66,4 +66,22 @@ public struct NetworkLibrary: Codable, Equatable, Sendable {
         let other = names.filter { name in !SystemID.allCases.contains { name.caseInsensitiveCompare($0.rawValue) == .orderedSame } }
         return (found, other.sorted())
     }
+
+    /// The address of `folder`, picked in a folder panel on a mounted share: the volume's remount URL (how macOS
+    /// mounted it) plus the folder's path inside it, through `parse` (so no password is kept). nil off SMB.
+    public static func address(for folder: URL, volume: URL, remount: URL) -> URL? {
+        let root = volume.standardizedFileURL.pathComponents, inner = folder.standardizedFileURL.pathComponents
+        guard inner.starts(with: root) else { return nil }
+        let base = remount.absoluteString.hasSuffix("/") ? String(remount.absoluteString.dropLast()) : remount.absoluteString
+        let rest = inner.dropFirst(root.count).joined(separator: "/")
+        return parse(rest.isEmpty ? base : base + "/" + rest)
+    }
+
+    /// `address(for:volume:remount:)` for a real folder, from its volume's resource values; nil when it isn't on
+    /// a network share.
+    public static func address(forMountedFolder folder: URL) -> URL? {
+        guard let values = try? folder.resourceValues(forKeys: [.volumeURLKey, .volumeURLForRemountingKey]),
+              let volume = values.volume, let remount = values.volumeURLForRemounting else { return nil }
+        return address(for: folder, volume: volume, remount: remount)
+    }
 }

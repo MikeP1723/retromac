@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import AppKit
 import RetromacCore
 import SwiftUI
 
@@ -30,6 +31,7 @@ struct NetworkLibrarySection: View {
                             .textFieldStyle(.roundedBorder)
                             .onSubmit(connect)
                         Button("Connect", action: connect).disabled(checking || address.isEmpty)
+                        Button("Browse…", action: browse).disabled(checking)
                         if checking { ProgressView().controlSize(.small) }
                     }
                     if case .found(let url, let folder, let consoles, let other) = check {
@@ -52,6 +54,23 @@ struct NetworkLibrarySection: View {
             }
             .padding(.top, 4)
         }
+    }
+
+    /// The folder panel's sidebar lists servers under Network; the picked folder's share address is filled in.
+    private func browse() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.directoryURL = URL(filePath: "/Volumes", directoryHint: .isDirectory)
+        panel.prompt = "Choose"
+        panel.message = "Choose your games folder on a network share. Your servers are under Network in the sidebar."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        guard let url = NetworkLibrary.address(forMountedFolder: folder) else {
+            check = .failed("That folder isn't on a network share. Choose one under Network in the sidebar.")
+            return
+        }
+        address = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+        connect()
     }
 
     private func connect() {
