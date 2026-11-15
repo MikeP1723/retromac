@@ -37,3 +37,25 @@ private func tomlKeys(_ files: [RenderedFile], _ url: URL) -> [String: [String: 
     #expect(try read(paths.xemuConfig).contains("[audio]\nvolume_limit = 0.5"))
     #expect(try read(paths.xemuConfig).contains("show_welcome = false"))
 }
+
+private func esdeSystemsXML(_ files: [RenderedFile]) -> String? {
+    for f in files { if case .esdeSystems(let xml) = f.kind { return xml } }
+    return nil
+}
+
+@Test func xboxHiddenFromESDEUntilItsBiosIsPresent() throws {
+    // xemu without a BIOS opens full screen at an error with no controller exit, so ES-DE doesn't list Xbox yet.
+    let home = try makeTempDir(), paths = Paths(home: home)
+    let mcpx = Data(repeating: 1, count: 512), flash = Data(repeating: 2, count: 262_144)
+    let table = [BiosFile(system: .xbox, fileName: "mcpx_1.0.bin", region: "All", md5: BiosFile.md5(mcpx), size: 512),
+                 BiosFile(system: .xbox, fileName: "Complex_4627.bin", region: "All", md5: BiosFile.md5(flash), size: 262_144)]
+    let p = profile(systems: [.xbox, .gc], library: home.appending(path: "Library"))
+    func xml() -> String { esdeSystemsXML(ProfileRenderer.render(p, manifest: try! .bundled(), rules: try! .bundled(), paths: paths,
+                                                                chip: "Apple M4 Pro", bios: table)) ?? "" }
+    #expect(!xml().contains("<name>xbox</name>") && xml().contains("<name>gc</name>"))
+    try FileManager.default.createDirectory(at: paths.retroarchSystem, withIntermediateDirectories: true)
+    try mcpx.write(to: paths.retroarchSystem.appending(path: "mcpx_1.0.bin"))
+    #expect(!xml().contains("<name>xbox</name>"))
+    try flash.write(to: paths.retroarchSystem.appending(path: "Complex_4627.bin"))
+    #expect(xml().contains("<name>xbox</name>"))
+}

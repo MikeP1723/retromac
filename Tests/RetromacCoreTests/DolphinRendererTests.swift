@@ -63,7 +63,8 @@ private let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, h
                     "C-Stick/Up": "Right Y-", "C-Stick/Down": "Right Y+", "C-Stick/Left": "Right X-", "C-Stick/Right": "Right X+",
                     "Triggers/L": "Trigger L", "Triggers/R": "Trigger R", "Triggers/L-Analog": "Trigger L", "Triggers/R-Analog": "Trigger R",
                     "D-Pad/Up": "Pad N", "D-Pad/Down": "Pad S", "D-Pad/Left": "Pad W", "D-Pad/Right": "Pad E"]
-    for (key, input) in expected { #expect(pad[key] == DolphinPads.anyPad(input), "\(key)") }
+    let names = DolphinPads.names(for: profile().controllers)
+    for (key, input) in expected { #expect(pad[key] == DolphinPads.anyPad(input, names: names), "\(key)") }
     #expect(pad.count == expected.count + 1)
 }
 @Test func wiimoteWithNunchukMapping() throws {
@@ -77,12 +78,27 @@ private let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, h
                     "Nunchuk/Buttons/C": "Shoulder L", "Nunchuk/Buttons/Z": "Trigger L",
                     "Nunchuk/Stick/Up": "Left Y-", "Nunchuk/Stick/Down": "Left Y+", "Nunchuk/Stick/Left": "Left X-", "Nunchuk/Stick/Right": "Left X+",
                     "Shake/X": "Button E", "Shake/Y": "Button E", "Shake/Z": "Button E"]
-    for (key, input) in expected { #expect(mote[key] == DolphinPads.anyPad(input), "\(key)") }
+    let names = DolphinPads.names(for: profile().controllers)
+    for (key, input) in expected { #expect(mote[key] == DolphinPads.anyPad(input, names: names), "\(key)") }
 }
 @Test func exitHotkeyIsSelectStart() throws {
     let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
     let keys = try #require(iniKeys(try render(profile(systems: [.gc])), config.appending(path: "Hotkeys.ini"))?["Hotkeys"])
     let stop = try #require(keys["General/Stop"])
     #expect(stop.hasPrefix("@(`SDL/0/Nintendo Switch Pro Controller:Back`+`SDL/0/Nintendo Switch Pro Controller:Start`) | @("))
-    #expect(stop.components(separatedBy: " | ").count == DolphinPads.sdlNames.count)
+    #expect(stop.components(separatedBy: " | ").count == DolphinPads.names(for: profile().controllers).count + 1)
+}
+
+@Test func exitHotkeyAlsoTakesEscape() throws {
+    // A fresh Hotkeys.ini replaces all of Dolphin's defaults, so Escape must be in it, qualified to the Mac keyboard.
+    let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
+    let stop = try #require(iniKeys(try render(profile(systems: [.gc])), config.appending(path: "Hotkeys.ini"))?["Hotkeys"]?["General/Stop"])
+    #expect(stop.hasSuffix(" | `Quartz/0/Keyboard & Mouse:Escape`"))
+}
+@Test func detectedPadsAndAdaptiveControllerAreMapped() throws {
+    let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
+    let files = try render(profile(systems: [.gc], controllers: [.init(deviceName: "8BitDo Pro 2", kind: .generic)]))
+    let a = try #require(iniKeys(files, config.appending(path: "GCPadNew.ini"))?["GCPad1"]?["Buttons/A"])
+    #expect(a.contains("`SDL/0/8BitDo Pro 2:Button S`"))
+    #expect(a.contains("`SDL/0/Xbox Adaptive Controller:Button S`"))
 }

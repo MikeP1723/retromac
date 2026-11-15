@@ -31,7 +31,7 @@ public enum ProfileRenderer {
     static let header = "# Managed by retromac — edits will be overwritten\n"
 
     public static func render(_ p: Profile, manifest: Manifest, rules: DisplayRules, paths: Paths,
-                              chip: String = Chip.brand()) -> [RenderedFile] {
+                              chip: String = Chip.brand(), bios: [BiosFile] = BiosFile.known) -> [RenderedFile] {
         let preset = rules.shaderPreset(for: p.display, look: p.look)
         var files: [RenderedFile] = []
 
@@ -95,12 +95,19 @@ public enum ProfileRenderer {
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
         files.append(RenderedFile(url: paths.esdeFindRules,
                                   kind: .whole(ESDESystems.findRules(paths: paths))))
-        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: p.systems, manifest: manifest))))
+        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: esdeSystems(p, paths: paths, bios: bios), manifest: manifest))))
 
         for system in p.systems {
             files.append(RenderedFile(url: p.libraryRoot.appending(path: system.rawValue), kind: .directory))
         }
 
         return files.sorted { $0.url.path < $1.url.path }
+    }
+
+    /// xemu without its BIOS opens full screen at an error with no controller way out, so ES-DE lists Xbox
+    /// only once both files are in place (adding them in Games re-applies).
+    static func esdeSystems(_ p: Profile, paths: Paths, bios: [BiosFile]) -> Set<SystemID> {
+        guard p.systems.contains(.xbox), !BiosStatus.missing(.xbox, in: paths.retroarchSystem, known: bios).isEmpty else { return p.systems }
+        return p.systems.subtracting([.xbox])
     }
 }

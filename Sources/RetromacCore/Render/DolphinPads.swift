@@ -11,18 +11,31 @@ public enum DolphinPads {
         "Nintendo Switch Pro Controller",
         "Xbox Series X Controller", "Xbox One Wireless Controller", "Xbox One S Controller", "Xbox One Elite 2 Controller",
         "DualSense Wireless Controller", "DualSense Edge Wireless Controller", "PS4 Controller",
+        "Xbox Adaptive Controller",
     ]
+
+    /// The known names plus the pads retromac detected: for a pad with no HIDAPI driver (an 8BitDo, a generic
+    /// MFi pad), SDL's name is GCController.vendorName.
+    static func names(for controllers: [ControllerProfile]) -> [String] {
+        var out = sdlNames
+        for name in controllers.map(\.deviceName) where !out.contains(name) { out.append(name) }
+        return out
+    }
+
+    /// A fresh Hotkeys.ini replaces all of Dolphin's default hotkeys, so the keyboard's Escape is kept as a
+    /// way out for a pad no name matches (Quartz backend: QuartzKeyboardAndMouse.mm).
+    static let escape = "`Quartz/0/Keyboard & Mouse:Escape`"
 
     static func qualified(_ name: String, _ input: String) -> String { "`SDL/0/\(name):\(input)`" }
 
     /// `input` on any known pad.
-    static func anyPad(_ input: String) -> String {
-        sdlNames.map { qualified($0, input) }.joined(separator: " | ")
+    static func anyPad(_ input: String, names: [String] = sdlNames) -> String {
+        names.map { qualified($0, input) }.joined(separator: " | ")
     }
 
     /// `a` and `b` held together on the same pad.
-    static func anyPadCombo(_ a: String, _ b: String) -> String {
-        sdlNames.map { "@(\(qualified($0, a))+\(qualified($0, b)))" }.joined(separator: " | ")
+    static func anyPadCombo(_ a: String, _ b: String, names: [String] = sdlNames) -> String {
+        names.map { "@(\(qualified($0, a))+\(qualified($0, b)))" }.joined(separator: " | ")
     }
 
     static let device = "SDL/0/\(sdlNames[0])"
