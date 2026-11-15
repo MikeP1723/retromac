@@ -44,3 +44,45 @@ private let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, h
     #expect(after.contains("RenderToMain = True"))
     #expect(after.contains("ISOPath0 = \(home.appending(path: "Library/gc").path)\n"))
 }
+
+@Test func anyPadExpressionCoversEveryKnownSdlName() {
+    let expr = DolphinPads.anyPad("Button S")
+    #expect(expr.hasPrefix("`SDL/0/Nintendo Switch Pro Controller:Button S` | "))
+    for name in ["Xbox Series X Controller", "Xbox One Wireless Controller", "DualSense Wireless Controller", "PS4 Controller"] {
+        #expect(expr.contains("`SDL/0/\(name):Button S`"))
+    }
+    #expect(expr.components(separatedBy: " | ").count == DolphinPads.sdlNames.count)
+}
+@Test func gamecubePadMapping() throws {
+    let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
+    let pad = try #require(iniKeys(try render(profile(systems: [.gc])), config.appending(path: "GCPadNew.ini"))?["GCPad1"])
+    #expect(pad["Device"] == "SDL/0/Nintendo Switch Pro Controller")
+    let expected = ["Buttons/A": "Button S", "Buttons/B": "Button W", "Buttons/X": "Button E", "Buttons/Y": "Button N",
+                    "Buttons/Z": "Shoulder R", "Buttons/Start": "Start",
+                    "Main Stick/Up": "Left Y-", "Main Stick/Down": "Left Y+", "Main Stick/Left": "Left X-", "Main Stick/Right": "Left X+",
+                    "C-Stick/Up": "Right Y-", "C-Stick/Down": "Right Y+", "C-Stick/Left": "Right X-", "C-Stick/Right": "Right X+",
+                    "Triggers/L": "Trigger L", "Triggers/R": "Trigger R", "Triggers/L-Analog": "Trigger L", "Triggers/R-Analog": "Trigger R",
+                    "D-Pad/Up": "Pad N", "D-Pad/Down": "Pad S", "D-Pad/Left": "Pad W", "D-Pad/Right": "Pad E"]
+    for (key, input) in expected { #expect(pad[key] == DolphinPads.anyPad(input), "\(key)") }
+    #expect(pad.count == expected.count + 1)
+}
+@Test func wiimoteWithNunchukMapping() throws {
+    let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
+    let mote = try #require(iniKeys(try render(profile(systems: [.wii])), config.appending(path: "WiimoteNew.ini"))?["Wiimote1"])
+    #expect(mote["Source"] == "1" && mote["Extension"] == "Nunchuk")
+    let expected = ["Buttons/A": "Button S", "Buttons/B": "Trigger R", "Buttons/1": "Button W", "Buttons/2": "Button N",
+                    "Buttons/-": "Back", "Buttons/+": "Start", "Buttons/Home": "Guide",
+                    "D-Pad/Up": "Pad N", "D-Pad/Down": "Pad S", "D-Pad/Left": "Pad W", "D-Pad/Right": "Pad E",
+                    "IR/Up": "Right Y-", "IR/Down": "Right Y+", "IR/Left": "Right X-", "IR/Right": "Right X+",
+                    "Nunchuk/Buttons/C": "Shoulder L", "Nunchuk/Buttons/Z": "Trigger L",
+                    "Nunchuk/Stick/Up": "Left Y-", "Nunchuk/Stick/Down": "Left Y+", "Nunchuk/Stick/Left": "Left X-", "Nunchuk/Stick/Right": "Left X+",
+                    "Shake/X": "Button E", "Shake/Y": "Button E", "Shake/Z": "Button E"]
+    for (key, input) in expected { #expect(mote[key] == DolphinPads.anyPad(input), "\(key)") }
+}
+@Test func exitHotkeyIsSelectStart() throws {
+    let config = Paths(home: URL(filePath: "/tmp/h")).dolphinConfig
+    let keys = try #require(iniKeys(try render(profile(systems: [.gc])), config.appending(path: "Hotkeys.ini"))?["Hotkeys"])
+    let stop = try #require(keys["General/Stop"])
+    #expect(stop.hasPrefix("@(`SDL/0/Nintendo Switch Pro Controller:Back`+`SDL/0/Nintendo Switch Pro Controller:Start`) | @("))
+    #expect(stop.components(separatedBy: " | ").count == DolphinPads.sdlNames.count)
+}
