@@ -18,6 +18,9 @@ struct SystemsStep: View {
                         if let caption = biosCaption(system) {
                             Text(caption).font(.caption).foregroundStyle(.secondary)
                         }
+                        if (try? Manifest.bundled())?.needsRosetta(system) == true {
+                            Text(Rosetta.warning).font(.caption).foregroundStyle(.orange)
+                        }
                     }
                 }
             }

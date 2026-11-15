@@ -51,6 +51,20 @@
       "systems": ["xbox"],
       "upstream": { "kind": "githubRelease", "project": "xemu-project/xemu",
                     "assetPattern": "^xemu-[0-9.]+-macos-universal\\.zip$" }
+    },
+    {
+      "id": "pcsx2",
+      "version": "2.8.2",
+      "url": "https://github.com/PCSX2/pcsx2/releases/download/v2.8.2/pcsx2-v2.8.2-macos-Qt.tar.xz",
+      "sha256": "3ed9eb40a33eae67134142c24255a079be444f0616ca29575a04a37981f7d426",
+      "license": "GPL-3.0-or-later",
+      "arch": "x86_64",
+      "rosetta": true,
+      "appName": "PCSX2.app",
+      "archiveAppName": "PCSX2-v2.8.2.app",
+      "systems": ["ps2"],
+      "upstream": { "kind": "githubRelease", "project": "PCSX2/pcsx2",
+                    "assetPattern": "^pcsx2-v[0-9.]+-macos-Qt\\.tar\\.xz$" }
     }
   ],
   "assets": [

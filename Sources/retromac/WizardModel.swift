@@ -64,7 +64,7 @@ final class WizardModel {
                                                    distanceInches: saved.display.distanceInches)
             profile = saved
         } else {
-            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.installableSystems ?? []),
+            profile = Profile(display: DisplayDetector.detect(), look: .crisp, systems: Set((try? Manifest.bundled())?.defaultSystems(osMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion) ?? []),
                               controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
         }
         // A library kept on another disk (see Migrator) stays where it is; anything else lives under retromac.
@@ -112,6 +112,7 @@ final class WizardModel {
         applied = false
         do {
             try profile.save(to: paths.profile)
+            try await ensureRosetta(manifest)
             log.append("Installing emulators and cores…")
             let installer = Installer(manifest: manifest, paths: paths, downloader: URLSessionDownloader(), runner: ProcessRunner())
             let installed = try await installer.install(systems: profile.systems)
@@ -135,6 +136,24 @@ final class WizardModel {
             log.append("Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again.")
         } catch {
             log.append("Error: \(error)")
+        }
+    }
+
+    /// Asks for Rosetta (one admin prompt) when a selected system needs it. Declining isn't an error: the
+    /// installer skips that emulator and installs everything else.
+    private func ensureRosetta(_ manifest: Manifest) async throws {
+        let needing = profile.systems.filter(manifest.needsRosetta)
+        let rosetta = Rosetta(runner: ProcessRunner())
+        guard !needing.isEmpty, !rosetta.isInstalled else { return }
+        log.append("Installing Rosetta (macOS will ask for your password)…")
+        switch await Task.detached(operation: { rosetta.install() }).value {
+        case .installed:
+            log.append("Rosetta installed.")
+        case .declined:
+            let names = needing.map(\.displayName).sorted().joined(separator: ", ")
+            log.append("\(names) needs Rosetta. Install & Apply again to be asked again.")
+        case .failed(let reason):
+            log.append("Couldn't install Rosetta: \(reason.split(separator: "\n").last.map(String.init) ?? reason)")
         }
     }
 

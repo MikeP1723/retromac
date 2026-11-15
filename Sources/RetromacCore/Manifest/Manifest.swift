@@ -45,12 +45,16 @@ public struct AppEntry: Codable, Equatable, Sendable {
     public var upstream: Upstream?
     /// A standalone emulator's systems: installed only when one of them is selected. nil = always.
     public var systems: [SystemID]?
+    /// The app's name inside the archive when it differs from `appName` (PCSX2 puts the version in it);
+    /// it's always installed as `appName`.
+    public var archiveAppName: String?
 
     public init(id: String, version: String, url: URL, sha256: String, license: String,
-                arch: Arch, rosetta: Bool, appName: String, upstream: Upstream? = nil, systems: [SystemID]? = nil) {
+                arch: Arch, rosetta: Bool, appName: String, upstream: Upstream? = nil, systems: [SystemID]? = nil,
+                archiveAppName: String? = nil) {
         self.id = id; self.version = version; self.url = url; self.sha256 = sha256
         self.license = license; self.arch = arch; self.rosetta = rosetta
-        self.appName = appName; self.upstream = upstream; self.systems = systems
+        self.appName = appName; self.upstream = upstream; self.systems = systems; self.archiveAppName = archiveAppName
     }
 }
 
@@ -136,8 +140,24 @@ public struct Manifest: Codable, Equatable, Sendable {
         apps.first { $0.systems?.contains(system) == true }
     }
 
-    /// Systems retromac can set up an emulator for; others are only recognized and filed.
+    /// A system whose only emulator is x86_64 and runs under Rosetta.
+    public func needsRosetta(_ system: SystemID) -> Bool {
+        core(for: system) == nil && app(for: system)?.rosetta == true
+    }
+
+    /// Systems retromac can set up an emulator for; others are only recognized and filed. Rosetta-tier
+    /// systems are hidden on a macOS without Rosetta.
+    public func installableSystems(osMajor: Int) -> [SystemID] {
+        SystemID.allCases.filter { (core(for: $0) != nil || app(for: $0) != nil) && (!needsRosetta($0) || Rosetta.isSupported(osMajor: osMajor)) }
+    }
+
     public var installableSystems: [SystemID] {
-        SystemID.allCases.filter { core(for: $0) != nil || app(for: $0) != nil }
+        installableSystems(osMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+    }
+
+    /// A new user's selection: everything native. Rosetta-tier systems are opt-in, so first setup never
+    /// asks for an admin password.
+    public func defaultSystems(osMajor: Int) -> [SystemID] {
+        installableSystems(osMajor: osMajor).filter { !needsRosetta($0) }
     }
 }
