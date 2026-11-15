@@ -60,3 +60,7 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     let legacy = profile(library: LegacyPaths(home: paths.home).root.appending(path: "Library"))
     #expect(legacy.resolvingLibrary(paths: paths).libraryRoot == paths.defaultLibraryRoot)
 }
+@Test func aPasswordWithSlashesOrAtSignsIsNeverKept() throws {
+    #expect(try #require(NetworkLibrary.parse("smb://mike:pa/ss@nas/media/roms")).absoluteString == "smb://mike@nas/media/roms")
+    #expect(try #require(NetworkLibrary.parse("smb://mike:p@ss@nas/media")).absoluteString == "smb://mike@nas/media")
+}

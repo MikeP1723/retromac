@@ -18,16 +18,17 @@ public struct NetworkLibrary: Codable, Equatable, Sendable {
     public static func parse(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.lowercased().hasPrefix("smb://") else { return nil }
-        let rest = trimmed.dropFirst("smb://".count)
-        let parts = rest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard parts.count >= 2, !parts[0].isEmpty else { return nil }
-        // Never keep a password: the address is saved in profile.json. macOS's login prompt asks instead.
-        var authority = parts[0]
-        if let at = authority.lastIndex(of: "@") {
-            let user = authority[..<at].split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-            authority = (user.isEmpty ? "" : "\(user)@") + authority[authority.index(after: at)...]
+        var rest = Substring(trimmed.dropFirst("smb://".count))
+        // User info first, at the last "@": a password may itself contain "/" or "@". Only the user name is
+        // kept; the address is saved in profile.json, and macOS's login prompt asks for the password.
+        var user = ""
+        if let at = rest.lastIndex(of: "@") {
+            user = String(rest[..<at].split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            rest = rest[rest.index(after: at)...]
         }
-        guard !authority.isEmpty, !authority.hasPrefix("@") else { return nil }
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard parts.count >= 2, !parts[0].isEmpty, !user.contains("/") else { return nil }
+        let authority = (user.isEmpty ? "" : "\(user)@") + parts[0]
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove("/")
         let path = parts.dropFirst().map { ($0.removingPercentEncoding ?? $0).addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }
