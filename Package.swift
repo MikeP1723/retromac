@@ -12,7 +12,7 @@ let package = Package(
         .executable(name: "retromac-console", targets: ["retromac-console"]),
     ],
     targets: [
-        .target(name: "RetromacCore", resources: [.process("Resources")]),
+        .target(name: "RetromacCore", resources: [.process("Resources")], linkerSettings: [.linkedFramework("NetFS")]),
         .executableTarget(name: "retromac", dependencies: ["RetromacCore"]),
         .executableTarget(name: "retromac-tool", dependencies: ["RetromacCore"]),
         .executableTarget(name: "retromac-console", dependencies: ["RetromacCore"]),

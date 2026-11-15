@@ -21,10 +21,17 @@ public struct NetworkLibrary: Codable, Equatable, Sendable {
         let rest = trimmed.dropFirst("smb://".count)
         let parts = rest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard parts.count >= 2, !parts[0].isEmpty else { return nil }
+        // Never keep a password: the address is saved in profile.json. macOS's login prompt asks instead.
+        var authority = parts[0]
+        if let at = authority.lastIndex(of: "@") {
+            let user = authority[..<at].split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+            authority = (user.isEmpty ? "" : "\(user)@") + authority[authority.index(after: at)...]
+        }
+        guard !authority.isEmpty, !authority.hasPrefix("@") else { return nil }
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove("/")
         let path = parts.dropFirst().map { ($0.removingPercentEncoding ?? $0).addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }
-        return URL(string: "smb://\(parts[0])/" + path.joined(separator: "/"))
+        return URL(string: "smb://\(authority)/" + path.joined(separator: "/"))
     }
 
     private var encodedParts: [Substring] {

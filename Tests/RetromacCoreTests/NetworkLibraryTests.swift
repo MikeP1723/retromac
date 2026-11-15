@@ -34,3 +34,10 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     p.useLocalLibrary()
     #expect(!p.isLibraryReadOnly && p.libraryRoot.path == "/Volumes/External/Games")
 }
+@Test func aPasswordInTheAddressIsNeverKept() throws {
+    // retromac stores no server passwords: macOS's login prompt and the Keychain handle them.
+    let url = try #require(NetworkLibrary.parse("smb://mike:secret@nas/media/roms"))
+    #expect(!url.absoluteString.contains("secret"))
+    #expect(url.absoluteString == "smb://mike@nas/media/roms")
+    #expect(try #require(NetworkLibrary.parse("smb://:secret@nas/media")).absoluteString == "smb://nas/media")
+}
