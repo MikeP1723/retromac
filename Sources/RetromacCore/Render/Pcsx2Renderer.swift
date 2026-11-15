@@ -17,8 +17,10 @@ public enum Pcsx2Renderer {
     public static func files(_ p: Profile, rules: DisplayRules, paths: Paths, chip: String) -> [RenderedFile] {
         guard p.systems.contains(.ps2) else { return [] }
         var keys: [String: [String: String]] = [
-            // No first-run wizard and no "are you sure?" in front of a controller-only user.
-            "UI": ["SetupWizardIncomplete": "false", "StartFullscreen": "true", "ConfirmShutdown": "false"],
+            // No first-run wizard and no "are you sure?" in front of a controller-only user. SettingsVersion 1 is
+            // what VMManager::Internal::CheckSettingsVersion wants: without it, PCSX2 meets an ini it didn't write
+            // with a mouse-only "reset all settings?" dialog that wipes everything here (QtHost.cpp InitializeConfig).
+            "UI": ["SettingsVersion": "1", "SetupWizardIncomplete": "false", "StartFullscreen": "true", "ConfirmShutdown": "false"],
             "GameList": ["RecursivePaths": p.libraryRoot.appending(path: SystemID.ps2.rawValue).path],
             "Folders": ["Bios": paths.ps2Bios.path],
             // Metal (GSRendererType 17): not Vulkan, which on macOS is MoltenVK.

@@ -196,7 +196,12 @@ public struct Installer: Sendable {
                     let name = app.archiveAppName ?? app.appName
                     let source = [out.appending(path: name)]
                         + ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? []).map { $0.appending(path: name) }
-                    guard let found = source.first(where: { fm.fileExists(atPath: $0.path) }) else { throw InstallError.appNotFoundInImage(name) }
+                    // A new release may rename the app (PCSX2-v2.8.3.app); the archive's only top-level app is it.
+                    let apps = ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? [])
+                        .filter { $0.pathExtension == "app" && (try? $0.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true }
+                    guard let found = source.first(where: { fm.fileExists(atPath: $0.path) }) ?? (apps.count == 1 ? apps[0] : nil) else {
+                        throw InstallError.appNotFoundInImage(name)
+                    }
                     try runner.run("/usr/bin/ditto", [found.path, staging.appending(path: app.appName).path])
                     return
                 }

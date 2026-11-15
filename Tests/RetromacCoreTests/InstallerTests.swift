@@ -402,3 +402,15 @@ private func rosettaEntry(_ local: URL) throws -> AppEntry {
     #expect(report.warnings == ["fake: needs Rosetta"])
     #expect(!FileManager.default.fileExists(atPath: apps.appending(path: "Fake.app").path))
 }
+
+@Test func nextVersionsArchiveNameStillInstalls() async throws {
+    // check-upstream bumps url/sha/version but not archiveAppName; 2.8.3's archive holds PCSX2-v2.8.3.app.
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let entry = try rosettaEntry(makeAppTarXz(in: dir, archiveName: "Fake-v2.app", version: "2.0"))
+    let report = try await Installer(manifest: manifest(apps: [entry]), paths: paths, downloader: host, runner: ProcessRunner(),
+                                     rosettaInstalled: { true }).install(systems: [.ps2])
+    #expect(report.installed == ["fake"])
+    #expect(Installer.bundleVersion(of: apps.appending(path: "Fake.app")) == "2.0")
+}

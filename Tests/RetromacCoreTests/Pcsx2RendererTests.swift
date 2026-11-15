@@ -39,7 +39,7 @@ private func pcsx2(_ files: [RenderedFile], _ paths: Paths) -> [String: [String:
 }
 @Test func pcsx2NeverShowsItsWizardOrQuitPrompt() throws {
     let ui = try #require(pcsx2(try render(profile(systems: [.ps2])), Paths(home: URL(filePath: "/tmp/h")))?["UI"])
-    #expect(ui == ["SetupWizardIncomplete": "false", "StartFullscreen": "true", "ConfirmShutdown": "false"])
+    #expect(ui == ["SettingsVersion": "1", "SetupWizardIncomplete": "false", "StartFullscreen": "true", "ConfirmShutdown": "false"])
 }
 @Test func biosFileNameComesFromTheBiosFolder() throws {
     let home = try makeTempDir(), paths = Paths(home: home)
@@ -73,4 +73,21 @@ private func pcsx2(_ files: [RenderedFile], _ paths: Paths) -> [String: [String:
     #expect(Ps2Bios.isBios(dir.appending(path: "a.bin")))
     #expect(!Ps2Bios.isBios(dir.appending(path: "b.bin")))
     #expect(!Ps2Bios.isBios(dir.appending(path: "c.bin")))
+}
+
+@Test func ps2HiddenFromESDEUntilPcsx2AndABiosArePresent() throws {
+    // Rosetta declined → no PCSX2 ("could not find emulator"); no BIOS → PCSX2 starts and quits at once.
+    let home = try makeTempDir(), paths = Paths(home: home)
+    func xml() -> String {
+        for f in ProfileRenderer.render(profile(systems: [.ps2, .gc], library: home.appending(path: "Library")), manifest: try! .bundled(),
+                                        rules: try! .bundled(), paths: paths, chip: "Apple M4 Pro") {
+            if case .esdeSystems(let xml) = f.kind { return xml }
+        }
+        return ""
+    }
+    #expect(!xml().contains("<name>ps2</name>") && xml().contains("<name>gc</name>"))
+    try syntheticPs2Bios(paths.ps2Bios.appending(path: "SCPH-39001.bin"))
+    #expect(!xml().contains("<name>ps2</name>"))
+    try FileManager.default.createDirectory(at: paths.applications.appending(path: "PCSX2.app"), withIntermediateDirectories: true)
+    #expect(xml().contains("<name>ps2</name>"))
 }

@@ -199,8 +199,7 @@ final class GamesModel {
                 failed.append(stem)
             }
             // Multi-disc playlists now name the .chd.
-            let folder = cue.deletingLastPathComponent()
-            _ = try? DiscSets.organize(folder.pathExtension.lowercased() == "m3u" ? folder.deletingLastPathComponent() : folder)
+            DiscSets.organizeAfterConversion(of: cue)
         }
         let converted = cues.count - failed.count
         message = ([converted > 0 ? "Converted \(converted.formatted()) disc game\(converted == 1 ? "" : "s") to CHD." : nil]
