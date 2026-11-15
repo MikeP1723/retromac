@@ -33,7 +33,7 @@ public enum ESDESystems {
         "pcsx2": ("PCSX2", "PCSX2.app/Contents/MacOS/PCSX2", "PCSX2", "%EMULATOR_PCSX2% -batch -nogui -fullscreen %ROM%"),
     ]
 
-    public static func xml(for systems: Set<SystemID>, manifest: Manifest) -> String {
+    public static func xml(for systems: Set<SystemID>, manifest: Manifest, library: URL) -> String {
         var out = "<?xml version=\"1.0\"?>\n<systemList>\n"
         for system in SystemID.allCases where systems.contains(system) {
             guard let info = info[system] else { continue }
@@ -53,7 +53,7 @@ public enum ESDESystems {
                 <system>
                     <name>\(name)</name>
                     <fullname>\(info.fullname)</fullname>
-                    <path>%ROMPATH%/\(name)</path>
+                    <path>\(ESDESettings.xmlEscape(library.appending(path: name).path))</path>
                     <extension>\(exts)</extension>
                     <command label="\(label)">\(command)</command>
                     <platform>\(name)</platform>

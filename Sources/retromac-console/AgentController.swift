@@ -147,7 +147,7 @@ final class AgentController {
     private func perform(_ actions: [ConsoleAction]) async {
         for action in actions {
             switch action {
-            case .launchESDE: launchESDE()
+            case .launchESDE: await launchESDE()
             case .bringConsoleToFront:
                 if let game = running("RetroArch.app") {
                     game.unhide()  // un-pauses (pause_nonactive)
@@ -191,11 +191,22 @@ final class AgentController {
         running(appName)?.forceTerminate()
     }
 
-    private func launchESDE() {
+    private func launchESDE() async {
         guard running("ES-DE.app") == nil else { return }
+        // A network library is mounted first; ES-DE never opens on an empty library. If it can't be mounted,
+        // or mounted somewhere new (configs still name the old path), retromac's home screen takes over: it
+        // shows "isn't connected", or re-points everything and Play continues.
+        if let profile = try? Profile.load(from: paths.profile), let library = profile.networkLibrary {
+            let folder = try? await Task.detached { try NetworkShare(mounter: NetFSMounter(allowUI: false)).libraryFolder(for: library) }.value
+            guard let folder, profile.libraryIs(folder) else {
+                openHome()
+                return
+            }
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.arguments = ESDELauncher.arguments(paths: paths)
-        NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration)
+        NSWorkspace.shared.openApplication(at: paths.applications.appending(path: "ES-DE.app"), configuration: configuration,
+                                           completionHandler: nil)
     }
 
     /// launchd passes retromac.app's path (see ConsoleAgent.plist).

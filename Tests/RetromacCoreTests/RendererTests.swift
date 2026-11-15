@@ -81,7 +81,23 @@ func wholeContent(_ files: [RenderedFile], _ url: URL) -> String? {
 }
 @Test func libraryDirectoriesForSelectedSystems() throws {
     let files = try render(profile(systems: [.snes]))
-    #expect(files.filter { $0.kind == .directory }.map(\.url.path) == ["/tmp/h/retromac/Library/snes"])
+    #expect(files.filter { $0.kind == .directory }.map(\.url.path).contains("/tmp/h/retromac/Library/snes"))
+}
+// ES-DE lists any of its ~200 built-in systems with a folder under ROMDirectory (a share's `dreamcast`
+// folder showed up with no emulator), and probing them over SMB cost 21 s at start-up. So ROMDirectory is
+// an empty folder retromac owns, and each retromac system names its own folder.
+@Test func esdeRomDirectoryIsAnEmptyFolderRetromacOwns() throws {
+    let paths = Paths(home: URL(filePath: "/tmp/h"))
+    let files = try render(profile(systems: [.nes]))
+    #expect(files.contains { $0.url == paths.esdeSettings && $0.kind == .esdeSettings(romDirectory: paths.esdeRomDirectory.path) })
+    #expect(files.contains { $0.url == paths.esdeRomDirectory && $0.kind == .directory })
+    #expect(!paths.esdeRomDirectory.path.hasPrefix("/tmp/h/retromac/Library"))
+}
+@Test func esdeSystemsNameTheirLibraryFolders() throws {
+    let xml = ESDESystems.xml(for: [.nes, .gc], manifest: try Manifest.bundled(), library: URL(filePath: "/Volumes/A&B roms"))
+    #expect(xml.contains("<path>/Volumes/A&amp;B roms/nes</path>"))
+    #expect(xml.contains("<path>/Volumes/A&amp;B roms/gc</path>"))
+    #expect(!xml.contains("%ROMPATH%"))
 }
 @Test func renderIsDeterministic() throws {
     let a = try render(profile()), b = try render(profile())
@@ -106,8 +122,18 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
     #expect(!without.contains { $0.url.pathExtension == "rmp" })
 }
 
+// GLideN64 (the core's default) draws only black on Apple Silicon; ParaLLEl-RDP under Vulkan renders.
+@Test func n64UsesParallelRdp() throws {
+    let (paths, files) = try renderBundled([.n64])
+    let options = files.first { $0.url == paths.coreOptions(libraryName: "Mupen64Plus-Next") }
+    #expect(options?.kind == .retroarchKeys(["mupen64plus-rdp-plugin": "parallel", "mupen64plus-rsp-plugin": "parallel"]))
+    #expect(options?.url.path.hasSuffix("RetroArch/config/Mupen64Plus-Next/Mupen64Plus-Next.opt") == true)
+    let (_, without) = try renderBundled([.nes])
+    #expect(!without.contains { $0.url.pathExtension == "opt" })
+}
+
 @Test func esdeListsOnlyLaunchableDiscFiles() throws {
-    let xml = ESDESystems.xml(for: [.psx, .saturn], manifest: try Manifest.bundled())
+    let xml = ESDESystems.xml(for: [.psx, .saturn], manifest: try Manifest.bundled(), library: URL(filePath: "/r"))
     for needle in ["<name>psx</name>", "pcsx_rearmed_libretro.dylib", "<name>saturn</name>", "mednafen_saturn_libretro.dylib", ".m3u", ".chd", ".cue"] {
         #expect(xml.contains(needle), "missing \(needle)")
     }
@@ -118,6 +144,6 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
 
 @Test func psxListsPbp() throws {
     // The importer files PSP-eboot PS1 games as .pbp; PCSX ReARMed plays them.
-    let xml = ESDESystems.xml(for: [.psx], manifest: try Manifest.bundled())
+    let xml = ESDESystems.xml(for: [.psx], manifest: try Manifest.bundled(), library: URL(filePath: "/r"))
     #expect(xml.contains(".pbp"))
 }

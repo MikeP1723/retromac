@@ -68,10 +68,7 @@ final class WizardModel {
                               controllers: [], facePolicy: .position, libraryRoot: paths.defaultLibraryRoot)
         }
         // A library kept on another disk (see Migrator) stays where it is; anything else lives under retromac.
-        if !FileManager.default.fileExists(atPath: profile.libraryRoot.path)
-            || profile.libraryRoot.path.hasPrefix(LegacyPaths(home: paths.home).root.path + "/") {
-            profile.libraryRoot = paths.defaultLibraryRoot
-        }
+        profile = profile.resolvingLibrary(paths: paths)
         profile.controllers = ControllerDetector.detect()
         return profile
     }
@@ -87,7 +84,7 @@ final class WizardModel {
         guard let manifest, let rules else { return }
         let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
         _ = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
-        DiscSets.organizeLibrary(profile.libraryRoot)
+        if !profile.isLibraryReadOnly { DiscSets.organizeLibrary(profile.libraryRoot) }
     }
 
     private static func load<T>(_ what: String, into errors: inout [String], _ body: () throws -> T) -> T? {
@@ -127,7 +124,7 @@ final class WizardModel {
             if let backup = report.backup { log.append("Previous config backed up to \(backup.path)") }
             backups = try BackupStore(root: paths.backups, home: paths.home).list()
             // Games filed before PS1/Saturn support (bare images, loose discs) become launchable.
-            DiscSets.organizeLibrary(profile.libraryRoot)
+            if !profile.isLibraryReadOnly { DiscSets.organizeLibrary(profile.libraryRoot) }
             try applyConsoleMode()
             log.append("Done.")
             applied = true

@@ -131,7 +131,8 @@ public struct Migrator: Sendable {
         // 5. The library lives under the root. A folder the user picked earlier moves in when it's on the
         //    same disk; one on another disk (an external drive) keeps being used where it is.
         var oldLibraries = [legacy.root.appending(path: "Library").standardizedFileURL.path]
-        if var profile = try? Profile.load(from: paths.profile) {
+        // A network library is never moved in (that would copy the share) or reset.
+        if var profile = try? Profile.load(from: paths.profile), !profile.isLibraryReadOnly {
             let chosen = profile.libraryRoot.standardizedFileURL
             if chosen.path != paths.defaultLibraryRoot.standardizedFileURL.path {
                 if fm.fileExists(atPath: chosen.path), chosen.path != oldLibraries[0] {

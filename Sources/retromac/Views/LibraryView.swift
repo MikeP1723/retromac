@@ -12,6 +12,9 @@ struct LibraryView: View {
     @State private var showDetails = false
     @State private var showDatabases = false
 
+    /// A network library is read-only: nothing is imported or converted there.
+    private var readOnly: Bool { app.wizard.profile.isLibraryReadOnly }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -40,14 +43,19 @@ struct LibraryView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if readOnly {
+                Text("Games come from your network library, so Add Games is off. Turn the network library off to add games here.")
+                    .foregroundStyle(.secondary)
+            }
+
             HStack(spacing: 12) {
                 Button { chooseFolder() } label: {
                     Label("Import Folder…", systemImage: "folder.badge.plus").frame(minWidth: 160)
                 }
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
-                .disabled(games.busy)
-                Button("Choose Files…") { chooseFiles() }.disabled(games.busy)
+                .disabled(games.busy || readOnly)
+                Button("Choose Files…") { chooseFiles() }.disabled(games.busy || readOnly)
                 Spacer()
             }
 
@@ -57,8 +65,9 @@ struct LibraryView: View {
                 .background(targeted ? Color.accentColor.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(Text("…or drop games, folders or .zip files here").foregroundStyle(.secondary))
                 .frame(height: 70)
+                .opacity(readOnly ? 0.4 : 1)
                 .dropDestination(for: URL.self) { urls, _ in
-                    guard !games.committing, !games.updatingDats else { return false }
+                    guard !games.committing, !games.updatingDats, !readOnly else { return false }
                     Task { await games.analyze(urls) }
                     return true
                 } isTargeted: { targeted = $0 }
@@ -83,7 +92,7 @@ struct LibraryView: View {
                 Text(message).foregroundStyle(message.hasPrefix("Not enough") ? .red : .secondary)
             }
 
-            if games.convertibleCount > 0 || games.converting {
+            if !readOnly, games.convertibleCount > 0 || games.converting {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -102,6 +111,8 @@ struct LibraryView: View {
             }
 
             Spacer(minLength: 0)
+
+            NetworkLibrarySection(app: app)
 
             DisclosureGroup("Game Databases", isExpanded: $showDatabases) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -186,7 +197,7 @@ private struct SummaryCard: View {
                     Button("Clear") { games.clear() }.disabled(games.busy)
                     Button("Import All") { Task { await games.commit() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(games.toAdd == 0 || games.busy)
+                        .disabled(games.toAdd == 0 || games.busy || games.readOnly())
                 }
                 if showDetails {
                     List(games.candidates) { item in

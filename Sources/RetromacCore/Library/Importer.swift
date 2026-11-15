@@ -47,6 +47,8 @@ struct FileCopy: Equatable, Sendable {
 public enum ImportError: Error, Equatable {
     /// Checked before anything is copied.
     case notEnoughSpace(needed: Int64, free: Int64)
+    /// The library is a network share, which retromac never writes to.
+    case readOnlyLibrary
 }
 
 /// Totals for the summary shown after scanning a folder.
@@ -96,6 +98,8 @@ public struct Importer: Sendable {
     static let maxArchiveBytes = 16 << 30
 
     let libraryRoot: URL
+    /// A network library: nothing is ever committed to it.
+    let readOnly: Bool
     let dats: DatStore
     let runner: any CommandRunner
     /// Bytes free on the volume holding a folder.
@@ -106,8 +110,9 @@ public struct Importer: Sendable {
 
     public init(libraryRoot: URL, dats: DatStore, runner: any CommandRunner,
                 freeSpace: @escaping @Sendable (URL) -> Int64? = Importer.availableCapacity,
-                biosDirectory: URL? = nil, bios: [BiosFile] = BiosFile.known) {
+                biosDirectory: URL? = nil, bios: [BiosFile] = BiosFile.known, readOnly: Bool = false) {
         self.libraryRoot = libraryRoot
+        self.readOnly = readOnly
         self.dats = dats
         self.runner = runner
         self.freeSpace = freeSpace
@@ -497,6 +502,7 @@ public struct Importer: Sendable {
 
     /// Copies identified, unverified and unidentified candidates; returns them with final destinations.
     public func commit(_ session: ImportSession, _ candidates: [ImportCandidate]) throws -> [ImportCandidate] {
+        guard !readOnly else { throw ImportError.readOnlyLibrary }
         let fm = FileManager.default
         let needed = Self.summarize(candidates).bytesToCopy
         var probe = libraryRoot

@@ -98,7 +98,9 @@ public struct ChdTool: Sendable {
     }
 
     /// Every PS1 and Saturn cue in the library, including inside multi-disc folders, by path.
-    public static func convertible(in libraryRoot: URL) -> [URL] {
+    public static func convertible(in libraryRoot: URL, readOnly: Bool = false) -> [URL] {
+        // A network library is never converted (that deletes the originals on the server).
+        guard !readOnly else { return [] }
         var cues: [URL] = []
         for folder in discFolders(libraryRoot) {
             let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])

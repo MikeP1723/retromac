@@ -40,7 +40,11 @@ final class GamesModel {
     /// replace a newer list with a stale one.
     private var generation = 0
 
-    init(paths: Paths, libraryRoot: @escaping () -> URL, biosAdded: @escaping () -> Void = {}) {
+    /// A network library: nothing is imported, converted or cleaned up there.
+    let readOnly: () -> Bool
+
+    init(paths: Paths, libraryRoot: @escaping () -> URL, readOnly: @escaping () -> Bool = { false }, biosAdded: @escaping () -> Void = {}) {
+        self.readOnly = readOnly
         self.paths = paths
         self.libraryRoot = libraryRoot
         self.biosAdded = biosAdded
@@ -143,8 +147,9 @@ final class GamesModel {
         committing = true
         defer { committing = false }
         let committed = dropped
+        // Read at commit time: the library may have become the (read-only) network share since the scan.
         let importer = Importer(libraryRoot: libraryRoot(), dats: DatStore(paths: paths), runner: ProcessRunner(),
-                                biosDirectory: paths.retroarchSystem)
+                                biosDirectory: paths.retroarchSystem, readOnly: readOnly())
         let pending = candidates
         do {
             let added = try await Task.detached { try importer.commit(session, pending) }.value
@@ -155,6 +160,8 @@ final class GamesModel {
             self.session = nil
             if added.contains(where: { if case .bios(let system, _) = $0.status { system == .xbox || system == .ps2 } else { false } }) { biosAdded() }
             message = "Imported \(count.formatted()) game\(count == 1 ? "" : "s"). Click Play to start."
+        } catch ImportError.readOnlyLibrary {
+            message = "Games come from your network library, so Add Games is off. Turn the network library off to add games here."
         } catch ImportError.notEnoughSpace(let needed, let free) {
             let format = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
             message = "Not enough space: needs \(format(needed)), \(format(free)) free. Nothing was copied."
@@ -164,13 +171,14 @@ final class GamesModel {
     }
 
     func refreshConvertible() {
+        guard !readOnly() else { convertibleCount = 0; return }
         if !converting { ChdTool.removeLeftovers(in: libraryRoot()) }
         convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
     }
 
     /// Converts every PS1/Saturn cue set and PS2 disc image to CHD, one game at a time; a game that fails keeps its files.
     func convertToCHD() async {
-        guard !busy else { return }
+        guard !busy, !readOnly() else { return }
         converting = true
         defer {
             converting = false
@@ -188,7 +196,8 @@ final class GamesModel {
                 return
             }
         }
-        let cues = ChdTool.convertible(in: libraryRoot())
+        // Re-read after the chdman install, which takes minutes: the library may be the share by now.
+        let cues = ChdTool.convertible(in: libraryRoot(), readOnly: readOnly())
         var failed: [String] = []
         for (index, cue) in cues.enumerated() {
             let stem = cue.deletingPathExtension().lastPathComponent

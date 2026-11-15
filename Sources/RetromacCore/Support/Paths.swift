@@ -46,6 +46,11 @@ public struct Paths: Sendable {
     }
 
     /// RetroArch reads a core's controller types (input_libretro_device_pN) only from remap files.
+    /// A core's options (RetroArch's per-core .opt).
+    public func coreOptions(libraryName: String) -> URL {
+        retroarchSupport.appending(path: "config/\(libraryName)/\(libraryName).opt")
+    }
+
     public func coreRemap(libraryName: String) -> URL {
         retroarchSupport.appending(path: "config/remaps/\(libraryName)/\(libraryName).rmp")
     }
@@ -75,6 +80,8 @@ public struct Paths: Sendable {
     public var esdeHome: URL { root }
     public var esdeRoot: URL { esdeHome.appending(path: "ES-DE") }
     public var esdeSettings: URL { esdeRoot.appending(path: "settings/es_settings.xml") }
+    /// ES-DE's ROMDirectory: kept empty, so ES-DE finds none of its built-in systems; ours name their folders.
+    public var esdeRomDirectory: URL { esdeRoot.appending(path: "roms") }
     public var esdeCustomSystems: URL { esdeRoot.appending(path: "custom_systems/es_systems.xml") }
     public var esdeFindRules: URL { esdeRoot.appending(path: "custom_systems/es_find_rules.xml") }
 }

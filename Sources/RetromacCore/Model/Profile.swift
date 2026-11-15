@@ -56,6 +56,43 @@ public struct Profile: Codable, Equatable, Sendable {
     public var libraryRoot: URL
     /// nil (or disabled) means console mode is off; profiles from before it existed decode as nil.
     public var console: ConsoleSettings?
+    /// A server share used as the library instead of the local one; nil for the local library.
+    public var networkLibrary: NetworkLibrary?
+
+    /// A network library is never written to: no imports, conversions, organizing or created folders.
+    public var isLibraryReadOnly: Bool { networkLibrary != nil }
+
+    /// Uses the share mounted at `folder`. The local library is remembered once, so switching between
+    /// shares still returns to it.
+    public mutating func useNetworkLibrary(_ url: URL, at folder: URL) {
+        networkLibrary = NetworkLibrary(url: url, localLibrary: networkLibrary?.localLibrary ?? libraryRoot)
+        libraryRoot = folder
+    }
+
+    /// A missing library, or one still in a legacy folder, goes back to retromac's own. A network library is
+    /// never reset: a share that isn't mounted yet shows "isn't connected" instead of an empty library.
+    public func resolvingLibrary(paths: Paths) -> Profile {
+        guard !isLibraryReadOnly else { return self }
+        var p = self
+        if !FileManager.default.fileExists(atPath: libraryRoot.path)
+            || libraryRoot.path.hasPrefix(LegacyPaths(home: paths.home).root.path + "/") {
+            p.libraryRoot = paths.defaultLibraryRoot
+        }
+        return p
+    }
+
+    /// Whether the library is `folder` (ignoring a trailing slash, which mount points vary in).
+    public func libraryIs(_ folder: URL) -> Bool {
+        libraryRoot.standardizedFileURL.path(percentEncoded: false).trimmingSuffix("/")
+            == folder.standardizedFileURL.path(percentEncoded: false).trimmingSuffix("/")
+    }
+
+    /// Back to the local library the network library replaced.
+    public mutating func useLocalLibrary() {
+        guard let network = networkLibrary else { return }
+        libraryRoot = network.localLibrary
+        networkLibrary = nil
+    }
 
     public init(display: DisplayProfile, look: Look, systems: Set<SystemID>,
                 controllers: [ControllerProfile], facePolicy: FacePolicy, libraryRoot: URL) {
@@ -72,5 +109,11 @@ public struct Profile: Codable, Equatable, Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encoder.encode(self).write(to: url, options: .atomic)
+    }
+}
+
+private extension String {
+    func trimmingSuffix(_ suffix: String) -> String {
+        hasSuffix(suffix) && count > suffix.count ? String(dropLast(suffix.count)) : self
     }
 }

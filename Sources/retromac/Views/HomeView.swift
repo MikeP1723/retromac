@@ -17,10 +17,21 @@ struct HomeView: View {
                 .padding(.vertical, 8)
                 .background(.tint.opacity(0.12))
             }
+            if case .notConnected(let reason) = app.networkStatus {
+                HStack {
+                    Label(AppModel.notConnected, systemImage: "externaldrive.badge.xmark")
+                    Text(reason).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    Button("Reconnect") { Task { await app.connectNetworkLibrary() } }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(.orange.opacity(0.15))
+            }
             Spacer()
             VStack(spacing: 18) {
                 Text("retromac").font(.largeTitle).fontWeight(.bold)
-                Button { app.play() } label: {
+                Button { Task { await app.play() } } label: {
                     Label("Play", systemImage: "play.fill").font(.title2).frame(width: 240, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
@@ -55,5 +66,11 @@ struct HomeView: View {
             .padding()
         }
         .task { await app.refreshLibraryStats() }
+        .alert(app.playAlert ?? "", isPresented: Binding(get: { app.playAlert != nil }, set: { if !$0 { app.playAlert = nil } })) {
+            Button("Try again") { Task { await app.play() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if case .notConnected(let reason) = app.networkStatus { Text(reason) }
+        }
     }
 }

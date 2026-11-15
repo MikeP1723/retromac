@@ -88,6 +88,18 @@ func unpinned(_ m: Manifest) -> Manifest {
     #expect(plan.blockedByMinAppVersion == "0.3.0")
     #expect(plan.retromacUpdate?.version == "0.3.0")
 }
+// A dev build reports Info.plist's placeholder version; "updating" it would install an older release.
+@Test func aDevelopmentBuildIsNeverOfferedARetromacUpdate() {
+    var latest = Manifest.fixture(); latest.minAppVersion = "0.3.0"; latest.apps[0].version = "1.1"
+    latest.retromac = SelfEntry(version: "0.3.0", url: URL(string: "https://github.com/MikeP1723/retromac/releases/download/v0.3.0/retromac.zip")!,
+                                sha256: String(repeating: "d", count: 64))
+    let plan = UpdatePlanner.plan(state: installedState(apps: ["retroarch": managedRetroArch]), applied: .fixture(),
+                                  latest: latest, coreIndex: nil, appVersion: "0.1.0", developmentBuild: true)
+    #expect(plan.retromacUpdate == nil)
+    // The compatibility gate still holds: components a newer retromac needs aren't installed by this one.
+    #expect(plan.blockedByMinAppVersion == "0.3.0")
+    #expect(plan.updates.isEmpty)
+}
 @Test func selfEntryPolicy() {
     var m = Manifest.fixture()
     m.retromac = SelfEntry(version: "0.2.0", url: URL(string: "https://evil.example/retromac.zip")!, sha256: String(repeating: "d", count: 64))
