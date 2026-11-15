@@ -86,7 +86,8 @@ final class UpdateModel {
         guard let latest else { return }
         guard let state = try? InstallState.load(from: paths.state) else { return }
         plan = UpdatePlanner.plan(state: state, applied: appliedManifest() ?? latest, latest: latest,
-                                  coreIndex: coreIndex, appVersion: appVersion)
+                                  coreIndex: coreIndex, appVersion: appVersion,
+                                  developmentBuild: AppVersion.isDevelopmentBuild(infoDictionary: Bundle.main.infoDictionary))
     }
 
     private func appliedManifest() -> Manifest? {

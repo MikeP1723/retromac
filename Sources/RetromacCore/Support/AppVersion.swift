@@ -7,4 +7,9 @@ public enum AppVersion {
     public static func current(infoDictionary: [String: Any]?) -> String {
         infoDictionary?["CFBundleShortVersionString"] as? String ?? fallback
     }
+
+    /// Built by scripts/bundle.sh without RETROMAC_VERSION: its version is a placeholder, so it never self-updates.
+    public static func isDevelopmentBuild(infoDictionary: [String: Any]?) -> Bool {
+        infoDictionary?["RetromacDevelopmentBuild"] as? Bool ?? false
+    }
 }

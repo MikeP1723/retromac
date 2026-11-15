@@ -49,11 +49,11 @@ public struct UpdatePlan: Equatable, Sendable {
 
 public enum UpdatePlanner {
     public static func plan(state: InstallState, applied: Manifest, latest: Manifest,
-                            coreIndex: CoreIndex?, appVersion: String) -> UpdatePlan {
-        let selfUpdate = latest.retromac.flatMap {
+                            coreIndex: CoreIndex?, appVersion: String, developmentBuild: Bool = false) -> UpdatePlan {
+        let selfUpdate = developmentBuild ? nil : latest.retromac.flatMap {
             SemVer.compare($0.version, appVersion) == .orderedDescending ? $0 : nil
         }
-        if SemVer.compare(appVersion, latest.minAppVersion) == .orderedAscending {
+        if !developmentBuild, SemVer.compare(appVersion, latest.minAppVersion) == .orderedAscending {
             return UpdatePlan(updates: [], retromacUpdate: selfUpdate, blockedByMinAppVersion: latest.minAppVersion)
         }
 

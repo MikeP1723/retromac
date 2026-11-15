@@ -15,3 +15,12 @@ import Testing
         .deletingLastPathComponent().appending(path: "../../Support/Info.plist").standardizedFileURL))
     #expect(plist["CFBundleShortVersionString"] as? String == AppVersion.fallback)
 }
+@Test func onlyAnUnstampedBundleIsADevelopmentBuild() throws {
+    #expect(AppVersion.isDevelopmentBuild(infoDictionary: ["CFBundleShortVersionString": "0.1.0", "RetromacDevelopmentBuild": true]))
+    #expect(!AppVersion.isDevelopmentBuild(infoDictionary: ["CFBundleShortVersionString": "0.6.0"]))
+    #expect(!AppVersion.isDevelopmentBuild(infoDictionary: nil))
+    // bundle.sh removes the flag only when RETROMAC_VERSION is set, as the release workflow does.
+    let plist = try #require(NSDictionary(contentsOf: URL(filePath: #filePath)
+        .deletingLastPathComponent().appending(path: "../../Support/Info.plist").standardizedFileURL))
+    #expect(AppVersion.isDevelopmentBuild(infoDictionary: plist as? [String: Any]))
+}

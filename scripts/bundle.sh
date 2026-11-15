@@ -21,6 +21,8 @@ cp Support/ConsoleInfo.plist "$agent/Contents/Info.plist"
 cp Support/Info.plist "$app/Contents/Info.plist"
 if [[ -n "${RETROMAC_VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $RETROMAC_VERSION" "$app/Contents/Info.plist"
+    # Without a version this is a development build, which never offers to "update" itself to a release.
+    /usr/libexec/PlistBuddy -c "Delete :RetromacDevelopmentBuild" "$app/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $RETROMAC_VERSION" "$agent/Contents/Info.plist"
 fi
 # Into Contents/Resources so Bundle.main finds them (SwiftPM's resource bundle would
