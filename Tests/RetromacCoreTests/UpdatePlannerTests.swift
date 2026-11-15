@@ -96,8 +96,9 @@ func unpinned(_ m: Manifest) -> Manifest {
     let plan = UpdatePlanner.plan(state: installedState(apps: ["retroarch": managedRetroArch]), applied: .fixture(),
                                   latest: latest, coreIndex: nil, appVersion: "0.1.0", developmentBuild: true)
     #expect(plan.retromacUpdate == nil)
-    #expect(plan.blockedByMinAppVersion == nil)
-    #expect(plan.updates.map(\.id) == ["retroarch"])
+    // The compatibility gate still holds: components a newer retromac needs aren't installed by this one.
+    #expect(plan.blockedByMinAppVersion == "0.3.0")
+    #expect(plan.updates.isEmpty)
 }
 @Test func selfEntryPolicy() {
     var m = Manifest.fixture()

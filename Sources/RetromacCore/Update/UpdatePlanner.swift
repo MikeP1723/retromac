@@ -53,7 +53,7 @@ public enum UpdatePlanner {
         let selfUpdate = developmentBuild ? nil : latest.retromac.flatMap {
             SemVer.compare($0.version, appVersion) == .orderedDescending ? $0 : nil
         }
-        if !developmentBuild, SemVer.compare(appVersion, latest.minAppVersion) == .orderedAscending {
+        if SemVer.compare(appVersion, latest.minAppVersion) == .orderedAscending {
             return UpdatePlan(updates: [], retromacUpdate: selfUpdate, blockedByMinAppVersion: latest.minAppVersion)
         }
 
