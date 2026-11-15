@@ -50,4 +50,16 @@ public struct NetworkLibrary: Codable, Equatable, Sendable {
     public var subpath: String {
         encodedParts.dropFirst().map { $0.removingPercentEncoding ?? String($0) }.joined(separator: "/")
     }
+
+    /// The consoles whose ES-DE folder name is in `folder` (any letter case: SMB mounts are case-insensitive),
+    /// and the other folders, so the user can see what to rename.
+    public static func consoleFolders(in folder: URL) -> (found: [SystemID], other: [String]) {
+        let names = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey],
+                                                                   options: [.skipsHiddenFiles])) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map(\.lastPathComponent)
+        let found = SystemID.allCases.filter { system in names.contains { $0.caseInsensitiveCompare(system.rawValue) == .orderedSame } }
+        let other = names.filter { name in !SystemID.allCases.contains { name.caseInsensitiveCompare($0.rawValue) == .orderedSame } }
+        return (found, other.sorted())
+    }
 }

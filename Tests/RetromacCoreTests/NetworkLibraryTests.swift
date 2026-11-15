@@ -64,3 +64,13 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     #expect(try #require(NetworkLibrary.parse("smb://mike:pa/ss@nas/media/roms")).absoluteString == "smb://mike@nas/media/roms")
     #expect(try #require(NetworkLibrary.parse("smb://mike:p@ss@nas/media")).absoluteString == "smb://mike@nas/media")
 }
+@Test func consoleFoldersAreMatchedByESDEName() throws {
+    let dir = try makeTempDir()
+    for name in ["SNES", "psx", "Nintendo 64", ".Trashes"] {
+        try FileManager.default.createDirectory(at: dir.appending(path: name), withIntermediateDirectories: true)
+    }
+    try write("hi", to: dir.appending(path: "readme.txt"))
+    let result = NetworkLibrary.consoleFolders(in: dir)
+    #expect(result.found == [.snes, .psx])
+    #expect(result.other == ["Nintendo 64"])
+}
