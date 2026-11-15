@@ -82,3 +82,7 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     let url = NetworkLibrary.parse("smb://mike@nas/media")
     #expect(url?.host() == "nas" && url?.user() == "mike")
 }
+@Test func anAddressWithoutAHostIsRejected() {
+    #expect(NetworkLibrary.parse("smb://:445/share") == nil)
+    #expect(NetworkLibrary.parse("smb://mike@:445/share") == nil)
+}
