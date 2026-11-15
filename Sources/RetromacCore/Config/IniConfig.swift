@@ -6,6 +6,8 @@ public enum IniConfig {
     /// Replaces owned keys in place, adds missing ones to the end of their section and missing sections
     /// to the end of the file (sorted), and keeps every other line as it was.
     public static func merge(existing: String, owned: [String: [String: String]]) -> String {
+        // A value can't add lines: one with a line break (a crafted file or folder name) is never written.
+        let owned = owned.mapValues { $0.filter { !$0.value.contains(where: \.isNewline) } }.filter { !$0.value.isEmpty }
         var lines = existing.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if lines.last == "" { lines.removeLast() }
         var pending = owned

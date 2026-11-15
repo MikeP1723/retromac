@@ -24,3 +24,10 @@ import Testing
 @Test func mergeOfEmptyFile() {
     #expect(IniConfig.merge(existing: "", owned: ["Settings": ["InternalResolution": "3"]]) == "[Settings]\nInternalResolution = 3\n")
 }
+@Test func valueWithALineBreakIsNeverWritten() {
+    // A value can't add lines (or sections) to the file: a filename with a line break would otherwise do just that.
+    let out = IniConfig.merge(existing: "[Filenames]\nBIOS = old.bin\n", owned: ["Filenames": ["BIOS": "x.bin\n[Hotkeys]\nShutdownVM = Keyboard/A"],
+                                                                                "UI": ["StartFullscreen": "true"]])
+    #expect(out == "[Filenames]\nBIOS = old.bin\n\n[UI]\nStartFullscreen = true\n")
+    #expect(!IniConfig.merge(existing: "", owned: ["A": ["k": "a\u{2028}b"]]).contains("\u{2028}"))
+}

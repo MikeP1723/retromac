@@ -28,3 +28,9 @@ private func ps2Importer(_ rig: ImportRig) -> Importer {
     try other.write(to: rig.paths.ps2Bios.appending(path: "SCPH-39001.bin"))
     guard case .failed = try ps2Importer(rig).analyze([file]).1.first?.status else { Issue.record("expected failed"); return }
 }
+@Test func biosWithALineBreakInItsNameIsNeverPicked() throws {
+    let dir = try makeTempDir()
+    try syntheticPs2Bios(dir.appending(path: "A\nB.bin"))
+    try syntheticPs2Bios(dir.appending(path: "Z.bin"))
+    #expect(Ps2Bios.first(in: dir) == "Z.bin")
+}

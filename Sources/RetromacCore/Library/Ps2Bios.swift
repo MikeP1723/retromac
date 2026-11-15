@@ -21,6 +21,6 @@ public enum Ps2Bios {
     /// The BIOS PCSX2 should boot: the first (by name) in `folder`.
     public static func first(in folder: URL) -> String? {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
-            .filter(isBios).map(\.lastPathComponent).sorted().first
+            .filter { !$0.lastPathComponent.contains(where: \.isNewline) && isBios($0) }.map(\.lastPathComponent).sorted().first
     }
 }
