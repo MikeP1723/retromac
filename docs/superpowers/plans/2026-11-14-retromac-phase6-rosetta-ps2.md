@@ -39,7 +39,7 @@
   - **Pad bindings** are by SDL player index, never by name (`SDLInputSource.cpp` `ConvertKeyToString`): `SDL-0/FaceSouth`, `SDL-0/-LeftY`, `SDL-0/+LeftTrigger`, with combos joined by ` & `. Pad section `Pad1`, `Type = DualShock2`.
   - **BIOS check** (`BiosTools.cpp`): a file of 4–8 MiB (`MIN_BIOS_SIZE`/`MAX_BIOS_SIZE`) whose 16-byte ROM directory entries include one named `RESET`.
 - **Coordination:**
-  - **Console Mode (unmerged):** its exit combo's quit list gains `PCSX2.app`, as with Dolphin and xemu.
+  - **Console Mode (merged):** its exit combo quits `ESDESystems.emulatorApps`, which adding `pcsx2` to `ESDESystems.standalones` (Task 3) extends to `PCSX2.app`. Task 3's tests assert that.
   - **Phase 5:** must merge first, because this branch is cut from `phase5-standalones`.
 
 ## Review Focus
