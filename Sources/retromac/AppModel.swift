@@ -14,7 +14,7 @@ final class AppModel {
     /// "1,190 games · 38.2 GB", computed in the background.
     var libraryStats: String?
 
-    enum NetworkStatus: Equatable { case local, connected, notConnected(String) }
+    enum NetworkStatus: Equatable { case local, connecting, connected, notConnected(String) }
     /// Whether the network library (if any) is reachable; the home screen shows a banner when it isn't.
     var networkStatus: NetworkStatus = .local
     /// Shown when Play can't connect the network library.
@@ -33,6 +33,8 @@ final class AppModel {
         updates = UpdateModel(paths: paths, profile: { wizard.profile })
         games = GamesModel(paths: paths, libraryRoot: { wizard.profile.libraryRoot }, readOnly: { wizard.profile.isLibraryReadOnly }, biosAdded: { try? wizard.applyConfigs() })
         screen = .wizard
+        // Until the first connect attempt resolves, a share's mount point is empty, not a library without games.
+        if wizard.profile.networkLibrary != nil { networkStatus = .connecting }
         if Self.migrator(paths).isNeeded { screen = .migrating } else { route() }
     }
 
@@ -117,6 +119,7 @@ final class AppModel {
             if !wizard.profile.libraryIs(folder) {
                 if let problem = switchLibrary({ $0.libraryRoot = folder }) {
                     networkStatus = .notConnected(problem)
+                    await refreshLibraryStats()
                     return false
                 }
                 return true
@@ -126,6 +129,7 @@ final class AppModel {
             return true
         } catch {
             networkStatus = .notConnected(Self.describe(error))
+            await refreshLibraryStats()
             return false
         }
     }
@@ -209,9 +213,15 @@ final class AppModel {
 
     func refreshLibraryStats() async {
         // Not "No games yet" for a share that simply isn't mounted (yet).
-        if case .notConnected = networkStatus {
+        switch networkStatus {
+        case .connecting:
+            libraryStats = "Connecting to your network library…"
+            return
+        case .notConnected:
             libraryStats = Self.notConnected
             return
+        case .local, .connected:
+            break
         }
         let library = wizard.profile.libraryRoot
         // Summing sizes across a server's terabytes over SMB is skipped; counts only.
