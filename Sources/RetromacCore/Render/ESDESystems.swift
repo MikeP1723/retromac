@@ -100,7 +100,8 @@ public enum ESDESystems {
             """
     }
 
-    /// Replaces the user's same-named <system> entries with ours and keeps all others.
+    /// Replaces the user's same-named <system> entries with ours and keeps all others, except entries we wrote
+    /// for a console we no longer list (unticked, or its BIOS or emulator gone): those would stay in ES-DE.
     public static func merge(existing: String?, ours: String) throws -> String {
         let doc = try XMLDocument(xmlString: existing ?? ours)
         let oursDoc = try XMLDocument(xmlString: ours)
@@ -110,7 +111,8 @@ public enum ESDESystems {
         let systems = oursRoot.elements(forName: "system")
         let names = Set(systems.compactMap { $0.elements(forName: "name").first?.stringValue })
         for system in root.elements(forName: "system") {
-            if let name = system.elements(forName: "name").first?.stringValue, names.contains(name) {
+            guard let name = system.elements(forName: "name").first?.stringValue else { continue }
+            if names.contains(name) || (SystemID(rawValue: name) != nil && isOurs(system)) {
                 system.detach()
             }
         }
@@ -119,5 +121,11 @@ public enum ESDESystems {
             root.addChild(system)
         }
         return doc.xmlString(options: [.nodePrettyPrint]) + "\n"
+    }
+
+    /// Written by `xml(for:)`: its RetroArch or standalone launch command, which a hand-made entry wouldn't copy.
+    private static func isOurs(_ system: XMLElement) -> Bool {
+        guard let command = system.elements(forName: "command").first?.stringValue else { return false }
+        return command.hasPrefix("%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/") || standalones.values.contains { $0.command == command }
     }
 }
