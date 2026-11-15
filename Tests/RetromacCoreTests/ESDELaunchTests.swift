@@ -42,3 +42,16 @@ import Testing
     #expect(ESDELauncher.arguments(paths: Paths(home: URL(filePath: "/tmp/my home")))
         == ["--home", "/tmp/my home/Library/Application Support/retromac"])
 }
+@Test func ps2LaunchesPcsx2() throws {
+    let xml = ESDESystems.xml(for: [.ps2], manifest: try Manifest.bundled())
+    for needle in ["<name>ps2</name>", "Sony PlayStation 2", "%EMULATOR_PCSX2% -batch -nogui -fullscreen %ROM%", ".chd", ".iso"] {
+        #expect(xml.contains(needle), "missing \(needle)")
+    }
+}
+@Test func findRulesIncludePcsx2() {
+    let xml = ESDESystems.findRules(paths: Paths(home: URL(filePath: "/tmp/my home")))
+    #expect(xml.contains("<emulator name=\"PCSX2\">")
+        && xml.contains("<entry>/tmp/my home/Library/Application Support/retromac/Apps/PCSX2.app/Contents/MacOS/PCSX2</entry>"))
+    // Console Mode's exit combo quits it too.
+    #expect(ESDESystems.emulatorApps.contains("PCSX2.app"))
+}

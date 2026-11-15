@@ -113,5 +113,5 @@ private func activeSession(_ settings: ConsoleSettings = standby, file: URL = st
 
 @Test func exitQuitsEveryEmulatorRetromacLaunches() {
     // RetroArch first, then each standalone ES-DE can launch: the exit combo's "ask, then terminate" list.
-    #expect(ESDESystems.emulatorApps == ["RetroArch.app", "Dolphin.app", "xemu.app"])
+    #expect(ESDESystems.emulatorApps == ["RetroArch.app", "Dolphin.app", "PCSX2.app", "xemu.app"])
 }
