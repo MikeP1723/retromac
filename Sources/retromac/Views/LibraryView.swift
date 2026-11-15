@@ -260,7 +260,7 @@ struct CandidateRow: View {
         switch item.status {
         case .identified(let system, let title): return "→ \(name(system)) · \(title)"
         case .unverified(let system): return "→ \(name(system)) · \(file) (not in database)"
-        case .bios(let system, let region): return "→ BIOS · \(name(system)) (\(region))"
+        case .bios(let system, let region): return region.isEmpty ? "→ BIOS · \(name(system))" : "→ BIOS · \(name(system)) (\(region))"
         case .duplicate: return "already in library"
         case .unidentified(let reason): return "→ _Unidentified (\(reason))"
         case .notAGame: return "not a game file"
