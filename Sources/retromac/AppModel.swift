@@ -14,6 +14,13 @@ final class AppModel {
     /// "1,190 games · 38.2 GB", computed in the background.
     var libraryStats: String?
 
+    enum NetworkStatus: Equatable { case local, connected, notConnected(String) }
+    /// Whether the network library (if any) is reachable; the home screen shows a banner when it isn't.
+    var networkStatus: NetworkStatus = .local
+    /// Shown when Play can't connect the network library.
+    var playAlert: String?
+    static let notConnected = "Your network library isn't connected."
+
     let paths = Paths(home: FileManager.default.homeDirectoryForCurrentUser)
     let wizard: WizardModel
     let updates: UpdateModel
@@ -95,7 +102,87 @@ final class AppModel {
         }
     }
 
-    func play() {
+    /// Mounts the network library, if there is one, and points everything at its mount point (which can
+    /// change between mounts, e.g. /Volumes/roms-1). False when it can't be reached; the path is left as is.
+    @discardableResult
+    func connectNetworkLibrary() async -> Bool {
+        guard let library = wizard.profile.networkLibrary else {
+            networkStatus = .local
+            return true
+        }
+        do {
+            let folder = try await Task.detached { try NetworkShare().libraryFolder(for: library) }.value
+            if folder.standardizedFileURL != wizard.profile.libraryRoot.standardizedFileURL {
+                wizard.profile.libraryRoot = folder
+                try? wizard.profile.save(to: paths.profile)
+                try? wizard.applyConfigs()
+            }
+            networkStatus = .connected
+            return true
+        } catch {
+            networkStatus = .notConnected(Self.describe(error))
+            return false
+        }
+    }
+
+    static func describe(_ error: Error) -> String {
+        switch error as? NetworkShareError {
+        case .cancelled: "The server login was cancelled."
+        case .unreachable(let reason): "The server couldn't be reached (\(reason))."
+        case .folderMissing(let folder): "The folder \(folder) isn't on the share."
+        case nil: error.localizedDescription
+        }
+    }
+
+    /// The share as `address` names it, mounted, with the console folders found in it; or why not.
+    enum NetworkCheck {
+        case found(url: URL, folder: URL, consoles: [SystemID], other: [String])
+        case failed(String)
+    }
+
+    func checkNetworkLibrary(_ address: String) async -> NetworkCheck {
+        guard let url = NetworkLibrary.parse(address) else {
+            return .failed("Enter an smb:// address, for example smb://nas/media/roms.")
+        }
+        let library = NetworkLibrary(url: url, localLibrary: wizard.profile.libraryRoot)
+        do {
+            let folder = try await Task.detached { try NetworkShare().libraryFolder(for: library) }.value
+            let (found, other) = await Task.detached { NetworkLibrary.consoleFolders(in: folder) }.value
+            return .found(url: url, folder: folder, consoles: found, other: other)
+        } catch {
+            return .failed(Self.describe(error))
+        }
+    }
+
+    /// Switches the library (to a share, or back to local) and re-applies. A refused apply (ES-DE or an
+    /// emulator is open) rolls the profile back and says which app to quit.
+    func switchLibrary(_ change: (inout Profile) -> Void) -> String? {
+        let before = wizard.profile
+        change(&wizard.profile)
+        do {
+            try wizard.profile.save(to: paths.profile)
+            try wizard.applyConfigs()
+        } catch {
+            wizard.profile = before
+            try? before.save(to: paths.profile)
+            if case ApplyError.appRunning(let app) = error {
+                return "Quit \(app.replacingOccurrences(of: ".app", with: "")) and try again."
+            }
+            return error.localizedDescription
+        }
+        networkStatus = wizard.profile.isLibraryReadOnly ? .connected : .local
+        games.refreshConvertible()
+        Task { await refreshLibraryStats() }
+        return nil
+    }
+
+    func play() async {
+        // A network library must be mounted first: ES-DE never opens on an empty library, and the console
+        // agent is only told once it is.
+        guard await connectNetworkLibrary() else {
+            playAlert = Self.notConnected
+            return
+        }
         // The console agent starts its session (standby assertion, combos) and brings ES-DE forward;
         // opening ES-DE here too means Play works even if the agent isn't running.
         if wizard.profile.console?.enabled == true {
@@ -106,16 +193,21 @@ final class AppModel {
 
     func showGamesInFinder() {
         let library = wizard.profile.libraryRoot
-        try? FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        if !wizard.profile.isLibraryReadOnly {
+            try? FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        }
         NSWorkspace.shared.activateFileViewerSelecting([library])
     }
 
     func refreshLibraryStats() async {
         let library = wizard.profile.libraryRoot
-        let stats = await Task.detached { LibraryStats.scan(library) }.value
+        // Summing sizes across a server's terabytes over SMB is skipped; counts only.
+        let sizes = !wizard.profile.isLibraryReadOnly
+        let stats = await Task.detached { LibraryStats.scan(library, sizes: sizes) }.value
         games.librarySystems = stats.bySystem
+        let count = "\(stats.count.formatted()) game\(stats.count == 1 ? "" : "s")"
         libraryStats = stats.count == 0 ? "No games yet"
-            : "\(stats.count.formatted()) game\(stats.count == 1 ? "" : "s") · \(ByteCountFormatter.string(fromByteCount: stats.bytes, countStyle: .file))"
+            : sizes ? "\(count) · \(ByteCountFormatter.string(fromByteCount: stats.bytes, countStyle: .file))" : "\(count) on your network library"
     }
 }
 
@@ -125,25 +217,29 @@ struct LibraryStats: Sendable {
     var bytes: Int64 = 0
     var bySystem: [SystemID: Int] = [:]
 
-    static func scan(_ library: URL) -> LibraryStats {
+    static func scan(_ library: URL, sizes: Bool = true) -> LibraryStats {
         var stats = LibraryStats()
         let fm = FileManager.default
+        let keys: [URLResourceKey] = sizes ? [.totalFileAllocatedSizeKey] : []
+        func size(_ url: URL) -> Int64 {
+            sizes ? Int64((try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0) : 0
+        }
         for system in SystemID.allCases {
             let folder = library.appending(path: system.rawValue)
-            guard let files = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
+            guard let files = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys,
                                                           options: [.skipsHiddenFiles]) else { continue }
             let hasCue = files.contains { $0.pathExtension.lowercased() == "cue" }
             var games = 0
             for file in files {
                 let ext = file.pathExtension.lowercased()
-                if ext == "m3u", let set = try? fm.contentsOfDirectory(at: file, includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
+                if ext == "m3u", let set = try? fm.contentsOfDirectory(at: file, includingPropertiesForKeys: keys,
                                                                          options: [.skipsHiddenFiles]) {
                     // A multi-disc game's folder (see DiscSets) is one game.
-                    stats.bytes += set.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0) }
+                    stats.bytes += set.reduce(0) { $0 + size($1) }
                     games += 1
                     continue
                 }
-                stats.bytes += Int64((try? file.resourceValues(forKeys: [.totalFileAllocatedSizeKey]).totalFileAllocatedSize) ?? 0)
+                stats.bytes += size(file)
                 if ext == "txt" || (hasCue && ext == "bin") { continue }
                 // A bare image that got its own cue (see DiscSets) is counted through the cue.
                 if ["img", "iso"].contains(ext), fm.fileExists(atPath: file.deletingPathExtension().appendingPathExtension("cue").path) { continue }

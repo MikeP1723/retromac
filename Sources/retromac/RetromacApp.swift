@@ -18,6 +18,7 @@ struct RetromacApp: App {
                 .frame(minWidth: 640, minHeight: 520)
                 .task {
                     app.retryPendingApply()
+                    await app.connectNetworkLibrary()
                     app.wizard.repairConsoleAgent()
                     await app.updates.check(force: false)
                 }
