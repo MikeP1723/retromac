@@ -59,3 +59,11 @@ private let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, h
     #expect(rules.internalScale(for: .gc, display: tv65_4k, chip: "Apple M1") == 3)
     #expect(rules.internalScale(for: .gc, display: tv65_4k, chip: "Apple M1 Pro") == 5)
 }
+
+@Test func internalScaleForPs2() throws {
+    let rules = try DisplayRules.bundled()
+    let qhd = DisplayProfile(widthPx: 3440, heightPx: 1440, refreshHz: 60, hdr: false, vrr: false, diagonalInches: 34, distanceInches: 30)
+    #expect(rules.internalScale(for: .ps2, display: qhd, chip: "Apple M4 Pro") == 4)
+    #expect(rules.internalScale(for: .ps2, display: tv65_4k, chip: "Apple M4 Pro") == 4)
+    #expect(rules.internalScale(for: .ps2, display: tv65_4k, chip: "Apple M1") == 3)
+}

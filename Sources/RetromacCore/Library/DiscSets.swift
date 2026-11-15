@@ -7,6 +7,15 @@ import Foundation
 public enum DiscSets {
     public static let systems: Set<SystemID> = [.psx, .saturn]
 
+    /// After a disc is converted to CHD: re-files its PS1/Saturn system folder so playlists name the .chd.
+    /// Other systems' folders (PS2) are never organized; their discs aren't cue sets.
+    public static func organizeAfterConversion(of disc: URL) {
+        var folder = disc.deletingLastPathComponent()
+        if folder.pathExtension.lowercased() == "m3u" { folder.deleteLastPathComponent() }
+        guard let system = SystemID(rawValue: folder.lastPathComponent), systems.contains(system) else { return }
+        _ = try? organize(folder)
+    }
+
     static let images: Set<String> = ["bin", "img", "iso"]
     static let discFiles: Set<String> = ["cue", "chd"]
 

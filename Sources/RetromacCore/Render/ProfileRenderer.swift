@@ -91,6 +91,7 @@ public enum ProfileRenderer {
 
         files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
+        files += Pcsx2Renderer.files(p, rules: rules, paths: paths, chip: chip)
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
         files.append(RenderedFile(url: paths.esdeFindRules,
@@ -105,9 +106,18 @@ public enum ProfileRenderer {
     }
 
     /// xemu without its BIOS opens full screen at an error with no controller way out, so ES-DE lists Xbox
-    /// only once both files are in place (adding them in Games re-applies).
+    /// only once both files are in place (adding them in Games re-applies). PS2 waits for PCSX2 and a BIOS.
     static func esdeSystems(_ p: Profile, paths: Paths, bios: [BiosFile]) -> Set<SystemID> {
-        guard p.systems.contains(.xbox), !BiosStatus.missing(.xbox, in: paths.retroarchSystem, known: bios).isEmpty else { return p.systems }
-        return p.systems.subtracting([.xbox])
+        var systems = p.systems
+        if systems.contains(.xbox), !BiosStatus.missing(.xbox, in: paths.retroarchSystem, known: bios).isEmpty {
+            systems.remove(.xbox)
+        }
+        // PS2 likewise: without PCSX2 (Rosetta declined) ES-DE can't find the emulator, and without a BIOS
+        // PCSX2 starts and quits at once.
+        if systems.contains(.ps2), Ps2Bios.first(in: paths.ps2Bios) == nil
+            || !FileManager.default.fileExists(atPath: paths.applications.appending(path: "PCSX2.app").path) {
+            systems.remove(.ps2)
+        }
+        return systems
     }
 }

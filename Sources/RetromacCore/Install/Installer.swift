@@ -66,12 +66,15 @@ public struct Installer: Sendable {
     let paths: Paths
     let downloader: any Downloader
     let runner: any CommandRunner
+    let rosettaInstalled: @Sendable () -> Bool
 
-    public init(manifest: Manifest, paths: Paths, downloader: any Downloader, runner: any CommandRunner) {
+    public init(manifest: Manifest, paths: Paths, downloader: any Downloader, runner: any CommandRunner,
+                rosettaInstalled: (@Sendable () -> Bool)? = nil) {
         self.manifest = manifest
         self.paths = paths
         self.downloader = downloader
         self.runner = runner
+        self.rosettaInstalled = rosettaInstalled ?? { Rosetta(runner: runner).isInstalled }
     }
 
     public func install(systems: Set<SystemID>) async throws -> InstallReport {
@@ -95,6 +98,11 @@ public struct Installer: Sendable {
                 if state.apps[app.id] == nil {
                     state.apps[app.id] = .init(version: installed, sha256: nil, managed: false)
                 }
+                continue
+            }
+            // The wizard asks for Rosetta first; without it, this app is skipped and everything else installs.
+            if app.rosetta, !rosettaInstalled() {
+                report.warnings.append("\(app.id): needs Rosetta")
                 continue
             }
             let staged = try await stageApp(app)
@@ -174,14 +182,27 @@ public struct Installer: Sendable {
         do {
             try await withTempDir { tmp in
                 let dmg = try await fetch(app.url, id: app.id, sha256: app.sha256, into: tmp)
-                if app.url.pathExtension.lowercased() == "zip" {
-                    // xemu ships a zip with the app (and its LICENSE.txt) at the top level.
+                let path = app.url.path.lowercased()
+                if path.hasSuffix(".zip") || path.hasSuffix(".tar.xz") {
+                    // xemu ships a zip, PCSX2 a tar.xz (bsdtar refuses ".." and absolute paths), each with the app
+                    // at the top level or one folder down; it's installed as appName whatever it's called inside.
                     let out = tmp.appending(path: "out")
-                    try runner.run("/usr/bin/ditto", ["-x", "-k", dmg.path, out.path])
-                    let source = [out.appending(path: app.appName)]
-                        + ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? []).map { $0.appending(path: app.appName) }
-                    guard let app = source.first(where: { fm.fileExists(atPath: $0.path) }) else { throw InstallError.appNotFoundInImage(app.appName) }
-                    try runner.run("/usr/bin/ditto", [app.path, staging.appending(path: app.lastPathComponent).path])
+                    if path.hasSuffix(".zip") {
+                        try runner.run("/usr/bin/ditto", ["-x", "-k", dmg.path, out.path])
+                    } else {
+                        try fm.createDirectory(at: out, withIntermediateDirectories: true)
+                        try runner.run("/usr/bin/tar", ["-xJf", dmg.path, "-C", out.path])
+                    }
+                    let name = app.archiveAppName ?? app.appName
+                    let source = [out.appending(path: name)]
+                        + ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? []).map { $0.appending(path: name) }
+                    // A new release may rename the app (PCSX2-v2.8.3.app); the archive's only top-level app is it.
+                    let apps = ((try? fm.contentsOfDirectory(at: out, includingPropertiesForKeys: nil)) ?? [])
+                        .filter { $0.pathExtension == "app" && (try? $0.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true }
+                    guard let found = source.first(where: { fm.fileExists(atPath: $0.path) }) ?? (apps.count == 1 ? apps[0] : nil) else {
+                        throw InstallError.appNotFoundInImage(name)
+                    }
+                    try runner.run("/usr/bin/ditto", [found.path, staging.appending(path: app.appName).path])
                     return
                 }
                 let mount = tmp.appending(path: "mnt")

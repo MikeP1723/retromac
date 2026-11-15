@@ -31,7 +31,7 @@ final class GamesModel {
 
     private let paths: Paths
     private let libraryRoot: () -> URL
-    /// Re-applies configs: ES-DE lists Xbox only once its BIOS is present.
+    /// Re-applies configs: ES-DE lists Xbox only once its BIOS is present, and PCSX2 is pointed at a new PS2 BIOS.
     private let biosAdded: () -> Void
     /// Everything dropped since the last Add/Clear; re-analyzed together so duplicates across drops are caught.
     private var dropped: [URL] = []
@@ -153,7 +153,7 @@ final class GamesModel {
             // Only what this commit covered; anything dropped meanwhile stays queued.
             dropped.removeFirst(min(committed.count, dropped.count))
             self.session = nil
-            if added.contains(where: { if case .bios(.xbox, _) = $0.status { true } else { false } }) { biosAdded() }
+            if added.contains(where: { if case .bios(let system, _) = $0.status { system == .xbox || system == .ps2 } else { false } }) { biosAdded() }
             message = "Imported \(count.formatted()) game\(count == 1 ? "" : "s"). Click Play to start."
         } catch ImportError.notEnoughSpace(let needed, let free) {
             let format = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
@@ -168,7 +168,7 @@ final class GamesModel {
         convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
     }
 
-    /// Converts every PS1/Saturn cue set to CHD, one game at a time; a game that fails keeps its files.
+    /// Converts every PS1/Saturn cue set and PS2 disc image to CHD, one game at a time; a game that fails keeps its files.
     func convertToCHD() async {
         guard !busy else { return }
         converting = true
@@ -194,13 +194,12 @@ final class GamesModel {
             let stem = cue.deletingPathExtension().lastPathComponent
             convertProgress = "Converting \((index + 1).formatted()) of \(cues.count.formatted()): \(stem)"
             do {
-                _ = try await Task.detached { try tool.convert(cue: cue) }.value
+                _ = try await Task.detached { try tool.convert(disc: cue) }.value
             } catch {
                 failed.append(stem)
             }
             // Multi-disc playlists now name the .chd.
-            let folder = cue.deletingLastPathComponent()
-            _ = try? DiscSets.organize(folder.pathExtension.lowercased() == "m3u" ? folder.deletingLastPathComponent() : folder)
+            DiscSets.organizeAfterConversion(of: cue)
         }
         let converted = cues.count - failed.count
         message = ([converted > 0 ? "Converted \(converted.formatted()) disc game\(converted == 1 ? "" : "s") to CHD." : nil]

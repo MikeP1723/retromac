@@ -171,3 +171,22 @@ private func listing(_ dir: URL) -> [String] {
     _ = try DiscSets.organize(dir)
     #expect(listing(dir).filter { $0.hasSuffix(".cue") } == ["Victim.cue"])
 }
+
+@Test func organizingAfterAPs2ConversionLeavesThePs2FolderAlone() throws {
+    // PS2 discs aren't PS1/Saturn sets: no cues, no Game.m3u folders (ES-DE's ps2 system doesn't list m3u).
+    let root = FileManager.default.temporaryDirectory.appending(path: "discsets-\(UUID().uuidString)")
+    let ps2 = root.appending(path: "ps2")
+    try FileManager.default.createDirectory(at: ps2, withIntermediateDirectories: true)
+    try Data(count: 2048 * 4).write(to: ps2.appending(path: "Game (Disc 1).chd"))
+    try Data(count: 2048 * 4).write(to: ps2.appending(path: "Game (Disc 2).iso"))
+    try Data(count: 2048 * 4).write(to: ps2.appending(path: "Other.iso"))
+    DiscSets.organizeAfterConversion(of: ps2.appending(path: "Game (Disc 1).chd"))
+    #expect(listing(ps2) == ["Game (Disc 1).chd", "Game (Disc 2).iso", "Other.iso"])
+}
+@Test func organizingAfterAPs1ConversionStillGroupsDiscs() throws {
+    let dir = try folder()
+    try cueSet(dir, "Game (Disc 1)")
+    try cueSet(dir, "Game (Disc 2)")
+    DiscSets.organizeAfterConversion(of: dir.appending(path: "Game (Disc 1).cue"))
+    #expect(listing(dir).contains("Game.m3u/Game.m3u"))
+}

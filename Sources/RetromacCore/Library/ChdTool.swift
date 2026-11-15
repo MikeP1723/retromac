@@ -28,20 +28,40 @@ public struct ChdTool: Sendable {
 
     /// Converts one cue/bin set to `<stem>.chd` beside it. The originals are deleted only after chdman
     /// has verified the new file; any failure leaves them untouched and no `.chd` at the final name.
-    public func convert(cue: URL) throws -> URL {
+    /// A PS2 DVD image: `chdman createdvd`, verified before the .iso is deleted.
+    public func convert(iso: URL) throws -> URL {
+        let target = try build(iso, mode: "createdvd")
+        try? FileManager.default.removeItem(at: iso)
+        return target
+    }
+
+    /// Converts the item `convertible(in:)` listed: a cue set or a PS2 .iso.
+    public func convert(disc: URL) throws -> URL {
+        disc.pathExtension.lowercased() == "iso" ? try convert(iso: disc) : try convert(cue: disc)
+    }
+
+    /// Writes `<stem>.chd` beside `input` through a hidden temp file, verified before it takes the name.
+    private func build(_ input: URL, mode: String) throws -> URL {
         let fm = FileManager.default
-        let folder = cue.deletingLastPathComponent()
-        let target = folder.appending(path: cue.deletingPathExtension().lastPathComponent + ".chd")
+        let folder = input.deletingLastPathComponent()
+        let target = folder.appending(path: input.deletingPathExtension().lastPathComponent + ".chd")
         guard !fm.fileExists(atPath: target.path) else { throw ChdError.alreadyExists(target) }
         let partial = folder.appending(path: ".retromac-\(UUID().uuidString).chd")
         do {
-            try runner.run(chdman.path, ["createcd", "-i", cue.path, "-o", partial.path])
+            try runner.run(chdman.path, [mode, "-i", input.path, "-o", partial.path])
             try runner.run(chdman.path, ["verify", "-i", partial.path])
             try fm.moveItem(at: partial, to: target)
         } catch {
             try? fm.removeItem(at: partial)
             throw error
         }
+        return target
+    }
+
+    public func convert(cue: URL) throws -> URL {
+        let fm = FileManager.default
+        let folder = cue.deletingLastPathComponent()
+        let target = try build(cue, mode: "createcd")
         // Only the set's own files: directly beside the cue (never a "../" or symlinked track), named after it,
         // and not used by another cue in the folder.
         let root = folder.resolvingSymlinksInPath().standardizedFileURL.path
@@ -74,7 +94,7 @@ public struct ChdTool: Sendable {
     }
 
     private static func discFolders(_ libraryRoot: URL) -> [URL] {
-        SystemID.allCases.filter { DiscSets.systems.contains($0) }.map { libraryRoot.appending(path: $0.rawValue) }
+        SystemID.allCases.filter { DiscSets.systems.contains($0) || $0 == .ps2 }.map { libraryRoot.appending(path: $0.rawValue) }
     }
 
     /// Every PS1 and Saturn cue in the library, including inside multi-disc folders, by path.
@@ -84,7 +104,10 @@ public struct ChdTool: Sendable {
             let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             while let url = walker?.nextObject() as? URL {
                 // A cue with a .chd of its name beside it would only fail with alreadyExists every time.
-                guard url.pathExtension.lowercased() == "cue",
+                // Cue sets in the PS1 and Saturn folders (set folders included), and PS2 DVD images.
+                let ext = url.pathExtension.lowercased()
+                let ps2 = folder.lastPathComponent == SystemID.ps2.rawValue
+                guard ps2 ? ext == "iso" && url.deletingLastPathComponent().lastPathComponent == SystemID.ps2.rawValue : ext == "cue",
                       !FileManager.default.fileExists(atPath: url.deletingPathExtension().appendingPathExtension("chd").path) else { continue }
                 cues.append(url)
             }

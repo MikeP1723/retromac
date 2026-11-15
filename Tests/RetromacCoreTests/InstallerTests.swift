@@ -365,3 +365,52 @@ private func hddAsset(_ zip: URL, sha256: String? = nil) throws -> AssetEntry {
     }
     #expect(!FileManager.default.fileExists(atPath: paths.xemuHDD.path))
 }
+
+func makeAppTarXz(in dir: URL, archiveName: String = "Fake-v1.app", version: String = "1.0") throws -> URL {
+    let src = dir.appending(path: "tarsrc-\(UUID().uuidString)")
+    try writePlist(version: version, to: src.appending(path: archiveName))
+    let archive = dir.appending(path: "app-\(UUID().uuidString).tar.xz")
+    try ProcessRunner().run("/usr/bin/tar", ["-cJf", archive.path, "-C", src.path, archiveName])
+    return archive
+}
+
+private func rosettaEntry(_ local: URL) throws -> AppEntry {
+    var entry = try appEntry(local)
+    entry.arch = .x86_64; entry.rosetta = true; entry.systems = [.ps2]; entry.archiveAppName = "Fake-v1.app"
+    return entry
+}
+
+@Test func installsAppFromTarXzUnderItsStableName() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let entry = try rosettaEntry(makeAppTarXz(in: dir, version: "2.8"))
+    let report = try await Installer(manifest: manifest(apps: [entry]), paths: paths, downloader: host, runner: ProcessRunner(),
+                                     rosettaInstalled: { true }).install(systems: [.ps2])
+    #expect(report.installed == ["fake"])
+    #expect(Installer.bundleVersion(of: apps.appending(path: "Fake.app")) == "2.8")
+    #expect(!FileManager.default.fileExists(atPath: apps.appending(path: "Fake-v1.app").path))
+}
+@Test func rosettaAppSkippedWithoutRosetta() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let native = try coreEntry(makeCoreZip(in: dir))
+    let report = try await Installer(manifest: manifest(apps: [try rosettaEntry(makeAppTarXz(in: dir))], cores: [native]), paths: paths,
+                                     downloader: host, runner: ProcessRunner(), rosettaInstalled: { false }).install(systems: [.ps2, .nes])
+    #expect(report.installed == ["mesen"])
+    #expect(report.warnings == ["fake: needs Rosetta"])
+    #expect(!FileManager.default.fileExists(atPath: apps.appending(path: "Fake.app").path))
+}
+
+@Test func nextVersionsArchiveNameStillInstalls() async throws {
+    // check-upstream bumps url/sha/version but not archiveAppName; 2.8.3's archive holds PCSX2-v2.8.3.app.
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let entry = try rosettaEntry(makeAppTarXz(in: dir, archiveName: "Fake-v2.app", version: "2.0"))
+    let report = try await Installer(manifest: manifest(apps: [entry]), paths: paths, downloader: host, runner: ProcessRunner(),
+                                     rosettaInstalled: { true }).install(systems: [.ps2])
+    #expect(report.installed == ["fake"])
+    #expect(Installer.bundleVersion(of: apps.appending(path: "Fake.app")) == "2.0")
+}

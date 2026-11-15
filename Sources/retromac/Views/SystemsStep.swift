@@ -18,6 +18,9 @@ struct SystemsStep: View {
                         if let caption = biosCaption(system) {
                             Text(caption).font(.caption).foregroundStyle(.secondary)
                         }
+                        if (try? Manifest.bundled())?.needsRosetta(system) == true {
+                            Text(Rosetta.warning).font(.caption).foregroundStyle(.orange)
+                        }
                     }
                 }
             }
@@ -37,6 +40,9 @@ struct SystemsStep: View {
                 : "BIOS found for: \(regions)"
         case .saturn:
             return regions.isEmpty ? "Needs your Saturn's BIOS file to play. Add it in Games like any game file." : "BIOS found for: \(regions)"
+        case .ps2:
+            return Ps2Bios.first(in: model.paths.ps2Bios) == nil
+                ? "Needs your PlayStation 2's BIOS file. Add it in Games like any game file." : "BIOS found."
         case .xbox:
             let missing = BiosStatus.missing(.xbox, in: model.paths.retroarchSystem)
             switch missing.count {

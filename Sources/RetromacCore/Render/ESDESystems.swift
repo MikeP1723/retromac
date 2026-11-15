@@ -21,6 +21,7 @@ public enum ESDESystems {
         .gc: Info(fullname: "Nintendo GameCube", extensions: ["iso", "gcm", "rvz", "wia", "ciso"]),
         .wii: Info(fullname: "Nintendo Wii", extensions: ["iso", "rvz", "wia", "wbfs", "ciso"]),
         .xbox: Info(fullname: "Microsoft Xbox", extensions: ["iso", "xiso"]),
+        .ps2: Info(fullname: "Sony PlayStation 2", extensions: ["iso", "chd"]),
     ]
 
     /// Standalone emulators: ES-DE find-rule name, executable inside the app, launch command.
@@ -28,6 +29,8 @@ public enum ESDESystems {
         "dolphin": ("DOLPHIN", "Dolphin.app/Contents/MacOS/Dolphin", "Dolphin", "%EMULATOR_DOLPHIN% -b -e %ROM%"),
         // Full screen comes from xemu.toml.
         "xemu": ("XEMU", "xemu.app/Contents/MacOS/xemu", "xemu", "%EMULATOR_XEMU% -dvd_path %ROM%"),
+        // -batch: PCSX2 exits when the game shuts down, so Select+Start returns to ES-DE.
+        "pcsx2": ("PCSX2", "PCSX2.app/Contents/MacOS/PCSX2", "PCSX2", "%EMULATOR_PCSX2% -batch -nogui -fullscreen %ROM%"),
     ]
 
     public static func xml(for systems: Set<SystemID>, manifest: Manifest) -> String {

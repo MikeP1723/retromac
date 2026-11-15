@@ -229,6 +229,24 @@ public struct Importer: Sendable {
             return
         }
 
+        // PS2 BIOS dumps come in many versions and regions; PCSX2 recognizes them by their ROM directory and
+        // picks one by name, so each keeps its own name in PCSX2's BIOS folder.
+        if let biosDirectory, Ps2Bios.isBios(real), let data = try? Data(contentsOf: real) {
+            let destination = biosDirectory.appending(path: "pcsx2/bios/\(file.lastPathComponent)")
+            if FileManager.default.fileExists(atPath: destination.path) {
+                if (try? Data(contentsOf: destination)) == data {
+                    var item = candidate(source, .duplicate(nil))
+                    item.destination = destination
+                    state.candidates.append(item)
+                } else {
+                    state.candidates.append(failed(source, "a different file named \(file.lastPathComponent) is already in PCSX2's BIOS folder"))
+                }
+                return
+            }
+            stage(source, .bios(.ps2, region: ""), bytes: data, destination: destination, checkFolder: false, &state)
+            return
+        }
+
         if DiscSniffer.extensions.contains(ext), let result = DiscSniffer.sniff(real) {
             switch result {
             case .success(let id): planDisc(real, source: source, id: id, &state)
