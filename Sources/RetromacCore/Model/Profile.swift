@@ -9,6 +9,26 @@ public enum FacePolicy: String, Codable, CaseIterable, Sendable {
     case position, label
 }
 
+public enum SleepBehavior: String, Codable, Sendable {
+    /// Screen off, Mac awake; any controller button brings it back.
+    case standby
+    /// Real sleep; only the power button or a keyboard wakes it.
+    case trueSleep
+}
+
+/// Console mode: an opt-in setup for a Mac dedicated to the TV.
+public struct ConsoleSettings: Codable, Equatable, Sendable {
+    public var enabled: Bool
+    public var sleep: SleepBehavior
+
+    public init(enabled: Bool, sleep: SleepBehavior) {
+        self.enabled = enabled
+        self.sleep = sleep
+    }
+
+    public static let `default` = ConsoleSettings(enabled: false, sleep: .standby)
+}
+
 public struct DisplayProfile: Codable, Equatable, Sendable {
     public var widthPx: Int
     public var heightPx: Int
@@ -34,6 +54,8 @@ public struct Profile: Codable, Equatable, Sendable {
     public var controllers: [ControllerProfile]
     public var facePolicy: FacePolicy
     public var libraryRoot: URL
+    /// nil (or disabled) means console mode is off; profiles from before it existed decode as nil.
+    public var console: ConsoleSettings?
 
     public init(display: DisplayProfile, look: Look, systems: Set<SystemID>,
                 controllers: [ControllerProfile], facePolicy: FacePolicy, libraryRoot: URL) {

@@ -18,6 +18,7 @@ struct RetromacApp: App {
                 .frame(minWidth: 640, minHeight: 520)
                 .task {
                     app.retryPendingApply()
+                    app.wizard.repairConsoleAgent()
                     await app.updates.check(force: false)
                 }
         }
@@ -89,6 +90,7 @@ struct WizardView: View {
                 case .display: DisplayStep(model: model)
                 case .systems: SystemsStep(model: model)
                 case .controllers: ControllersStep(model: model)
+                case .console: ConsoleStep(model: model, console: model.console)
                 case .apply: ApplyStep(model: model)
                 }
             }

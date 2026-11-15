@@ -96,6 +96,11 @@ final class AppModel {
     }
 
     func play() {
+        // The console agent starts its session (standby assertion, combos) and brings ES-DE forward;
+        // opening ES-DE here too means Play works even if the agent isn't running.
+        if wizard.profile.console?.enabled == true {
+            DistributedNotificationCenter.default().postNotificationName(.init("petersoft.retromac.console.play"), object: nil, deliverImmediately: true)
+        }
         wizard.openESDE()
     }
 

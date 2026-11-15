@@ -42,7 +42,12 @@ public enum ProfileRenderer {
             "input_joypad_driver": "mfi",
             "input_autodetect_enable": "true",
             "system_directory": paths.retroarchSystem.path,
+            // RetroArch binds its command port on every interface, so it stays off (and older installs that
+            // turned it on for console mode get it turned off).
+            "network_cmd_enable": "false",
         ]
+        // Console mode pauses a game by hiding RetroArch; pause_nonactive makes that a pause.
+        if p.console?.enabled == true { keys["pause_nonactive"] = "true" }
         // RetroArch's defaults are under ~/Documents/RetroArch; keep the user's data with everything else.
         let support = paths.retroarchSupport, builtin = support.appending(path: "playlists/builtin")
         keys["savefile_directory"] = support.appending(path: "saves").path
