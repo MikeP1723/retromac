@@ -98,7 +98,8 @@ public enum ProfileRenderer {
                                   kind: .whole(ESDESystems.findRules(paths: paths))))
         files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: esdeSystems(p, paths: paths, bios: bios), manifest: manifest))))
 
-        for system in p.systems {
+        // Console folders, never on a read-only network library.
+        for system in p.systems where !p.isLibraryReadOnly {
             files.append(RenderedFile(url: p.libraryRoot.appending(path: system.rawValue), kind: .directory))
         }
 

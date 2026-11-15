@@ -41,3 +41,22 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     #expect(url.absoluteString == "smb://mike@nas/media/roms")
     #expect(try #require(NetworkLibrary.parse("smb://:secret@nas/media")).absoluteString == "smb://nas/media")
 }
+@Test func noConsoleFoldersAreCreatedOnTheShare() throws {
+    var p = profile(systems: [.nes, .snes])
+    p.useNetworkLibrary(URL(string: "smb://nas/roms")!, at: URL(filePath: "/Volumes/roms"))
+    #expect(!(try render(p)).contains { $0.kind == .directory })
+    #expect((try render(profile(systems: [.nes]))).contains { $0.kind == .directory })
+}
+@Test func networkLibraryIsNeverResetWhenOffline() throws {
+    let paths = Paths(home: try makeTempDir())
+    var p = profile()
+    p.useNetworkLibrary(URL(string: "smb://nas/roms")!, at: URL(filePath: "/Volumes/not-mounted/roms"))
+    #expect(p.resolvingLibrary(paths: paths) == p)
+}
+@Test func missingLocalLibraryStillResets() throws {
+    let paths = Paths(home: try makeTempDir())
+    let p = profile(library: URL(filePath: "/nowhere/Library"))
+    #expect(p.resolvingLibrary(paths: paths).libraryRoot == paths.defaultLibraryRoot)
+    let legacy = profile(library: LegacyPaths(home: paths.home).root.appending(path: "Library"))
+    #expect(legacy.resolvingLibrary(paths: paths).libraryRoot == paths.defaultLibraryRoot)
+}

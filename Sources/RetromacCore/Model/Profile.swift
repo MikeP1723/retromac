@@ -69,6 +69,18 @@ public struct Profile: Codable, Equatable, Sendable {
         libraryRoot = folder
     }
 
+    /// A missing library, or one still in a legacy folder, goes back to retromac's own. A network library is
+    /// never reset: a share that isn't mounted yet shows "isn't connected" instead of an empty library.
+    public func resolvingLibrary(paths: Paths) -> Profile {
+        guard !isLibraryReadOnly else { return self }
+        var p = self
+        if !FileManager.default.fileExists(atPath: libraryRoot.path)
+            || libraryRoot.path.hasPrefix(LegacyPaths(home: paths.home).root.path + "/") {
+            p.libraryRoot = paths.defaultLibraryRoot
+        }
+        return p
+    }
+
     /// Back to the local library the network library replaced.
     public mutating func useLocalLibrary() {
         guard let network = networkLibrary else { return }

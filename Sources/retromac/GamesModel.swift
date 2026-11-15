@@ -40,7 +40,11 @@ final class GamesModel {
     /// replace a newer list with a stale one.
     private var generation = 0
 
-    init(paths: Paths, libraryRoot: @escaping () -> URL, biosAdded: @escaping () -> Void = {}) {
+    /// A network library: nothing is imported, converted or cleaned up there.
+    let readOnly: () -> Bool
+
+    init(paths: Paths, libraryRoot: @escaping () -> URL, readOnly: @escaping () -> Bool = { false }, biosAdded: @escaping () -> Void = {}) {
+        self.readOnly = readOnly
         self.paths = paths
         self.libraryRoot = libraryRoot
         self.biosAdded = biosAdded
@@ -164,6 +168,7 @@ final class GamesModel {
     }
 
     func refreshConvertible() {
+        guard !readOnly() else { convertibleCount = 0; return }
         if !converting { ChdTool.removeLeftovers(in: libraryRoot()) }
         convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
     }

@@ -176,3 +176,19 @@ struct LegacyRig {
     #expect(try Profile.load(from: rig.paths.profile).libraryRoot == rig.paths.defaultLibraryRoot)
     #expect(!rig.exists(custom))
 }
+@Test func migrationLeavesANetworkLibraryAlone() throws {
+    // Present (it would otherwise be moved in, pulling files off the share) or offline (it would be reset).
+    for present in [true, false] {
+        let rig = try LegacyRig()
+        try rig.buildLegacy()
+        let share = rig.home.appending(path: "Volumes/roms")
+        if present { try write("rom", to: share.appending(path: "snes/b.sfc")) }
+        var profile = try Profile.load(from: rig.legacy.root.appending(path: "profile.json"))
+        profile.useNetworkLibrary(URL(string: "smb://nas/roms")!, at: share)
+        try profile.save(to: rig.legacy.root.appending(path: "profile.json"))
+        _ = try rig.migrator().run()
+        let after = try Profile.load(from: rig.paths.profile)
+        #expect(after.libraryRoot == share && after.networkLibrary == profile.networkLibrary, "present: \(present)")
+        if present { #expect(try read(share.appending(path: "snes/b.sfc")) == "rom") }
+    }
+}

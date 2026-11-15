@@ -24,7 +24,7 @@ final class AppModel {
         let paths = wizard.paths
         self.wizard = wizard
         updates = UpdateModel(paths: paths, profile: { wizard.profile })
-        games = GamesModel(paths: paths, libraryRoot: { wizard.profile.libraryRoot }, biosAdded: { try? wizard.applyConfigs() })
+        games = GamesModel(paths: paths, libraryRoot: { wizard.profile.libraryRoot }, readOnly: { wizard.profile.isLibraryReadOnly }, biosAdded: { try? wizard.applyConfigs() })
         screen = .wizard
         if Self.migrator(paths).isNeeded { screen = .migrating } else { route() }
     }

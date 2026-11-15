@@ -49,8 +49,12 @@ func importDats(_ args: [String]) {
 
 func importGames(_ args: [String]) throws {
     let p = paths(args)
-    let library = option("--library", in: args).map { URL(filePath: $0) }
-        ?? (try? Profile.load(from: p.profile))?.libraryRoot ?? p.defaultLibraryRoot
+    let saved = try? Profile.load(from: p.profile)
+    if option("--library", in: args) == nil, saved?.isLibraryReadOnly == true {
+        print("The library is a read-only network library.")
+        exit(1)
+    }
+    let library = option("--library", in: args).map { URL(filePath: $0) } ?? saved?.libraryRoot ?? p.defaultLibraryRoot
     let importer = Importer(libraryRoot: library, dats: DatStore(paths: p), runner: ProcessRunner(), biosDirectory: p.retroarchSystem)
     let (session, candidates) = try importer.analyze(positional(args, valued: ["--home", "--library"]).map { URL(filePath: $0) })
     let results = args.contains("--dry-run") ? candidates : try importer.commit(session, candidates)
