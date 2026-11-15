@@ -112,12 +112,17 @@ final class AppModel {
         }
         do {
             let folder = try await Task.detached { try NetworkShare().libraryFolder(for: library) }.value
-            if folder.standardizedFileURL != wizard.profile.libraryRoot.standardizedFileURL {
-                wizard.profile.libraryRoot = folder
-                try? wizard.profile.save(to: paths.profile)
-                try? wizard.applyConfigs()
+            // A new mount point (roms-1) is adopted only if the configs apply; otherwise ES-DE would keep the old
+            // path while the profile said the new one, and nothing would ever re-apply.
+            if !wizard.profile.libraryIs(folder) {
+                if let problem = switchLibrary({ $0.libraryRoot = folder }) {
+                    networkStatus = .notConnected(problem)
+                    return false
+                }
+                return true
             }
             networkStatus = .connected
+            await refreshLibraryStats()
             return true
         } catch {
             networkStatus = .notConnected(Self.describe(error))
@@ -157,6 +162,8 @@ final class AppModel {
     /// Switches the library (to a share, or back to local) and re-applies. A refused apply (ES-DE or an
     /// emulator is open) rolls the profile back and says which app to quit.
     func switchLibrary(_ change: (inout Profile) -> Void) -> String? {
+        // An import or conversion in flight would otherwise finish against the other library.
+        guard !games.busy else { return "Wait for the current import or conversion to finish, then try again." }
         let before = wizard.profile
         change(&wizard.profile)
         do {
@@ -171,6 +178,7 @@ final class AppModel {
             return error.localizedDescription
         }
         networkStatus = wizard.profile.isLibraryReadOnly ? .connected : .local
+        if wizard.profile.isLibraryReadOnly != before.isLibraryReadOnly { games.clear() }
         games.refreshConvertible()
         Task { await refreshLibraryStats() }
         return nil
@@ -200,6 +208,11 @@ final class AppModel {
     }
 
     func refreshLibraryStats() async {
+        // Not "No games yet" for a share that simply isn't mounted (yet).
+        if case .notConnected = networkStatus {
+            libraryStats = Self.notConnected
+            return
+        }
         let library = wizard.profile.libraryRoot
         // Summing sizes across a server's terabytes over SMB is skipped; counts only.
         let sizes = !wizard.profile.isLibraryReadOnly

@@ -81,6 +81,12 @@ public struct Profile: Codable, Equatable, Sendable {
         return p
     }
 
+    /// Whether the library is `folder` (ignoring a trailing slash, which mount points vary in).
+    public func libraryIs(_ folder: URL) -> Bool {
+        libraryRoot.standardizedFileURL.path(percentEncoded: false).trimmingSuffix("/")
+            == folder.standardizedFileURL.path(percentEncoded: false).trimmingSuffix("/")
+    }
+
     /// Back to the local library the network library replaced.
     public mutating func useLocalLibrary() {
         guard let network = networkLibrary else { return }
@@ -103,5 +109,11 @@ public struct Profile: Codable, Equatable, Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encoder.encode(self).write(to: url, options: .atomic)
+    }
+}
+
+private extension String {
+    func trimmingSuffix(_ suffix: String) -> String {
+        hasSuffix(suffix) && count > suffix.count ? String(dropLast(suffix.count)) : self
     }
 }

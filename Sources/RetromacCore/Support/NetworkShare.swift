@@ -32,10 +32,23 @@ public struct NetFSMounter: ShareMounter {
         return open
     }
 
+    /// What NetFS is asked: a guest share (Finder's `GUEST:@host/share`; the empty password isn't kept) is
+    /// mounted as guest, with no user, or NetFS asks for credentials a guest login doesn't have.
+    static func request(for share: URL, allowUI: Bool) -> (url: URL, options: NSMutableDictionary) {
+        let options = openOptions(allowUI: allowUI)
+        guard share.user()?.lowercased() == "guest", var c = URLComponents(url: share, resolvingAgainstBaseURL: false) else {
+            return (share, options)
+        }
+        c.user = nil
+        c.password = nil
+        options[kNetFSUseGuestKey] = true
+        return (c.url ?? share, options)
+    }
+
     public func mount(_ share: URL) throws -> URL {
-        let open = Self.openOptions(allowUI: allowUI)
+        let (url, open) = Self.request(for: share, allowUI: allowUI)
         var points: Unmanaged<CFArray>?
-        let status = NetFSMountURLSync(share as CFURL, nil, nil, nil, open, nil, &points)
+        let status = NetFSMountURLSync(url as CFURL, nil, nil, nil, open, nil, &points)
         if status == 0, let point = (points?.takeRetainedValue() as? [String])?.first {
             return URL(filePath: point, directoryHint: .isDirectory)
         }

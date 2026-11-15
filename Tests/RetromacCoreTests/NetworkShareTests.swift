@@ -74,3 +74,12 @@ private func library(_ text: String) -> NetworkLibrary {
     #expect(NetFSMounter.openOptions(allowUI: true)[kNAUIOptionKey as String] as? String == kNAUIOptionAllowUI as String)
     #expect(NetFSMounter.openOptions(allowUI: false)[kNAUIOptionKey as String] as? String == kNAUIOptionNoUI as String)
 }
+@Test func aGuestShareMountsAsGuestWithoutAPrompt() {
+    // Finder's guest mount is smb://GUEST:@host/share; parse drops the empty password, so NetFS must be told
+    // "guest" or it asks for credentials (and the console agent, with no UI, fails at every login).
+    let (url, options) = NetFSMounter.request(for: URL(string: "smb://GUEST@petersoft._smb._tcp.local/roms")!, allowUI: false)
+    #expect(url.absoluteString == "smb://petersoft._smb._tcp.local/roms")
+    #expect(options[kNetFSUseGuestKey as String] as? Bool == true)
+    let (named, namedOptions) = NetFSMounter.request(for: URL(string: "smb://mike@nas/roms")!, allowUI: true)
+    #expect(named.absoluteString == "smb://mike@nas/roms" && namedOptions[kNetFSUseGuestKey as String] == nil)
+}

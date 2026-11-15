@@ -197,7 +197,7 @@ private struct SummaryCard: View {
                     Button("Clear") { games.clear() }.disabled(games.busy)
                     Button("Import All") { Task { await games.commit() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(games.toAdd == 0 || games.busy)
+                        .disabled(games.toAdd == 0 || games.busy || games.readOnly())
                 }
                 if showDetails {
                     List(games.candidates) { item in

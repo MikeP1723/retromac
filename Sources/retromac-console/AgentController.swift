@@ -198,7 +198,7 @@ final class AgentController {
         // shows "isn't connected", or re-points everything and Play continues.
         if let profile = try? Profile.load(from: paths.profile), let library = profile.networkLibrary {
             let folder = try? await Task.detached { try NetworkShare(mounter: NetFSMounter(allowUI: false)).libraryFolder(for: library) }.value
-            guard folder?.standardizedFileURL == profile.libraryRoot.standardizedFileURL else {
+            guard let folder, profile.libraryIs(folder) else {
                 openHome()
                 return
             }

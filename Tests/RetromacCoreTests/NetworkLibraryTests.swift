@@ -86,3 +86,25 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     #expect(NetworkLibrary.parse("smb://:445/share") == nil)
     #expect(NetworkLibrary.parse("smb://mike@:445/share") == nil)
 }
+@Test func aReadOnlyLibraryNeverTakesAnImport() throws {
+    // A queued "Import All" after switching to the share must copy nothing there.
+    let rig = try ImportRig()
+    let file = try rig.drop("game.nes", Data("NES\u{1A}".utf8) + Data(count: 16 + 16384))
+    let importer = Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: ProcessRunner(), readOnly: true)
+    let (session, candidates) = try importer.analyze([file])
+    #expect(throws: ImportError.readOnlyLibrary) { try importer.commit(session, candidates) }
+    #expect(!FileManager.default.fileExists(atPath: rig.library.path))
+}
+@Test func nothingOnAReadOnlyLibraryIsOfferedForShrinking() throws {
+    // Shrink re-reads its list after installing chdman; by then the library may be the share.
+    let root = try makeTempDir()
+    try write("FILE \"G.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n", to: root.appending(path: "psx/G.cue"))
+    #expect(ChdTool.convertible(in: root).count == 1)
+    #expect(ChdTool.convertible(in: root, readOnly: true).isEmpty)
+}
+@Test func mountPointComparisonIgnoresATrailingSlash() {
+    var p = profile(library: URL(filePath: "/Volumes/roms/", directoryHint: .isDirectory))
+    p.useNetworkLibrary(URL(string: "smb://nas/roms")!, at: URL(filePath: "/Volumes/roms/", directoryHint: .isDirectory))
+    #expect(p.libraryIs(URL(filePath: "/Volumes/roms")))
+    #expect(!p.libraryIs(URL(filePath: "/Volumes/roms-1")))
+}
