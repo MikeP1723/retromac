@@ -74,3 +74,11 @@ private func lib(_ text: String) throws -> NetworkLibrary {
     #expect(result.found == [.snes, .psx])
     #expect(result.other == ["Nintendo 64"])
 }
+@Test func anAddressThatHidesItsHostIsRejected() {
+    // What retromac reads as the host must be what Foundation's URL reads as the host.
+    #expect(NetworkLibrary.parse("smb://nas?x@evil/share") == nil)
+    #expect(NetworkLibrary.parse("smb://nas#x@evil/share") == nil)
+    #expect(NetworkLibrary.parse("smb://mike@nas?x/share") == nil)
+    let url = NetworkLibrary.parse("smb://mike@nas/media")
+    #expect(url?.host() == "nas" && url?.user() == "mike")
+}

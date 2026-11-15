@@ -27,12 +27,16 @@ public struct NetworkLibrary: Codable, Equatable, Sendable {
             rest = rest[rest.index(after: at)...]
         }
         let parts = rest.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-        guard parts.count >= 2, !parts[0].isEmpty, !user.contains("/") else { return nil }
+        // What's read here as user and host must be what URL reads: nothing that ends the authority early.
+        guard parts.count >= 2, !parts[0].isEmpty,
+              !user.contains(where: { "/?#".contains($0) }), !parts[0].contains(where: { "?#".contains($0) }) else { return nil }
         let authority = (user.isEmpty ? "" : "\(user)@") + parts[0]
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove("/")
         let path = parts.dropFirst().map { ($0.removingPercentEncoding ?? $0).addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }
-        return URL(string: "smb://\(authority)/" + path.joined(separator: "/"))
+        guard let url = URL(string: "smb://\(authority)/" + path.joined(separator: "/")),
+              url.host(percentEncoded: false)?.lowercased() == parts[0].split(separator: ":").first.map({ $0.lowercased() }) else { return nil }
+        return url
     }
 
     private var encodedParts: [Substring] {
