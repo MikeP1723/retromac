@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Foundation
+import Testing
+@testable import RetromacCore
+
+private func lib(_ text: String) throws -> NetworkLibrary {
+    NetworkLibrary(url: try #require(NetworkLibrary.parse(text)), localLibrary: URL(filePath: "/x"))
+}
+
+@Test func addressesParseToShareAndSubfolder() throws {
+    let a = try lib("  SMB://nas/media/roms/  ")
+    #expect(a.share.absoluteString == "smb://nas/media" && a.subpath == "roms")
+    let b = try lib("smb://mike@nas/My Games")
+    #expect(b.share.absoluteString == "smb://mike@nas/My%20Games" && b.subpath == "")
+    let c = try lib("smb://nas/media/retro/roms")
+    #expect(c.share.absoluteString == "smb://nas/media" && c.subpath == "retro/roms")
+    #expect(NetworkLibrary.parse("smb://nas") == nil && NetworkLibrary.parse("smb://nas/") == nil)
+    #expect(NetworkLibrary.parse("afp://nas/media") == nil && NetworkLibrary.parse("/Volumes/media") == nil && NetworkLibrary.parse("") == nil)
+}
+@Test func olderProfilesHaveNoNetworkLibrary() throws {
+    let url = try makeTempDir().appending(path: "profile.json")
+    var p = profile()
+    try p.save(to: url)
+    p = try Profile.load(from: url)
+    #expect(p.networkLibrary == nil && !p.isLibraryReadOnly)
+    #expect(!(try String(contentsOf: url, encoding: .utf8)).contains("networkLibrary"))
+}
+@Test func turningItOffRestoresTheExactLocalLibrary() {
+    var p = profile(library: URL(filePath: "/Volumes/External/Games"))
+    p.useNetworkLibrary(URL(string: "smb://nas/media/roms")!, at: URL(filePath: "/Volumes/media/roms"))
+    #expect(p.isLibraryReadOnly && p.libraryRoot.path == "/Volumes/media/roms")
+    #expect(p.networkLibrary?.localLibrary.path == "/Volumes/External/Games")
+    p.useNetworkLibrary(URL(string: "smb://nas/other")!, at: URL(filePath: "/Volumes/other"))  // switching shares keeps the original
+    p.useLocalLibrary()
+    #expect(!p.isLibraryReadOnly && p.libraryRoot.path == "/Volumes/External/Games")
+}

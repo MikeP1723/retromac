@@ -56,6 +56,25 @@ public struct Profile: Codable, Equatable, Sendable {
     public var libraryRoot: URL
     /// nil (or disabled) means console mode is off; profiles from before it existed decode as nil.
     public var console: ConsoleSettings?
+    /// A server share used as the library instead of the local one; nil for the local library.
+    public var networkLibrary: NetworkLibrary?
+
+    /// A network library is never written to: no imports, conversions, organizing or created folders.
+    public var isLibraryReadOnly: Bool { networkLibrary != nil }
+
+    /// Uses the share mounted at `folder`. The local library is remembered once, so switching between
+    /// shares still returns to it.
+    public mutating func useNetworkLibrary(_ url: URL, at folder: URL) {
+        networkLibrary = NetworkLibrary(url: url, localLibrary: networkLibrary?.localLibrary ?? libraryRoot)
+        libraryRoot = folder
+    }
+
+    /// Back to the local library the network library replaced.
+    public mutating func useLocalLibrary() {
+        guard let network = networkLibrary else { return }
+        libraryRoot = network.localLibrary
+        networkLibrary = nil
+    }
 
     public init(display: DisplayProfile, look: Look, systems: Set<SystemID>,
                 controllers: [ControllerProfile], facePolicy: FacePolicy, libraryRoot: URL) {
