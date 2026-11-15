@@ -21,7 +21,8 @@ public enum ConsoleAction: Equatable, Sendable {
     case sleepDisplay
     case sleepSystem
     case declareUserActivity
-    case quitRetroArch(graceSeconds: Int)
+    /// Every emulator retromac launches (ESDESystems.emulatorApps), each asked to quit, then terminated.
+    case quitEmulators(graceSeconds: Int)
     case quitESDE(graceSeconds: Int)
     case openHome
 }
@@ -65,7 +66,7 @@ public struct ConsoleSession {
         case .combo(.exit):
             guard active else { return [] }
             active = false
-            return [.quitRetroArch(graceSeconds: 5), .quitESDE(graceSeconds: 5), .releaseStandbyAssertion, .openHome]
+            return [.quitEmulators(graceSeconds: 5), .quitESDE(graceSeconds: 5), .releaseStandbyAssertion, .openHome]
         case .esdeTerminated(byAgent: false):
             guard active else { return [] }
             active = false

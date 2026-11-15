@@ -62,6 +62,10 @@ public enum ESDESystems {
         return out + "</systemList>\n"
     }
 
+    /// RetroArch, then the standalones in a fixed order: what Console Mode's exit combo quits.
+    public static let emulatorApps = ["RetroArch.app"]
+        + standalones.values.sorted { $0.rule < $1.rule }.map { String($0.executable.prefix { $0 != "/" }) }
+
     /// ES-DE's own find rules expect emulators in /Applications; these point at retromac's copies.
     public static func findRules(paths: Paths) -> String {
         let emulators = [("RETROARCH", paths.retroarchExecutable)]
