@@ -106,6 +106,16 @@ private func renderBundled(_ systems: Set<SystemID>) throws -> (Paths, [Rendered
     #expect(!without.contains { $0.url.pathExtension == "rmp" })
 }
 
+// GLideN64 (the core's default) draws only black on Apple Silicon; ParaLLEl-RDP under Vulkan renders.
+@Test func n64UsesParallelRdp() throws {
+    let (paths, files) = try renderBundled([.n64])
+    let options = files.first { $0.url == paths.coreOptions(libraryName: "Mupen64Plus-Next") }
+    #expect(options?.kind == .retroarchKeys(["mupen64plus-rdp-plugin": "parallel", "mupen64plus-rsp-plugin": "parallel"]))
+    #expect(options?.url.path.hasSuffix("RetroArch/config/Mupen64Plus-Next/Mupen64Plus-Next.opt") == true)
+    let (_, without) = try renderBundled([.nes])
+    #expect(!without.contains { $0.url.pathExtension == "opt" })
+}
+
 @Test func esdeListsOnlyLaunchableDiscFiles() throws {
     let xml = ESDESystems.xml(for: [.psx, .saturn], manifest: try Manifest.bundled())
     for needle in ["<name>psx</name>", "pcsx_rearmed_libretro.dylib", "<name>saturn</name>", "mednafen_saturn_libretro.dylib", ".m3u", ".chd", ".cue"] {

@@ -46,6 +46,11 @@ public struct Paths: Sendable {
     }
 
     /// RetroArch reads a core's controller types (input_libretro_device_pN) only from remap files.
+    /// A core's options (RetroArch's per-core .opt).
+    public func coreOptions(libraryName: String) -> URL {
+        retroarchSupport.appending(path: "config/\(libraryName)/\(libraryName).opt")
+    }
+
     public func coreRemap(libraryName: String) -> URL {
         retroarchSupport.appending(path: "config/remaps/\(libraryName)/\(libraryName).rmp")
     }

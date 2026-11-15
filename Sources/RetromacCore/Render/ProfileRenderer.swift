@@ -89,6 +89,14 @@ public enum ProfileRenderer {
             ])))
         }
 
+        // GLideN64, the N64 core's default renderer, draws only black on Apple Silicon; ParaLLEl-RDP (Vulkan) renders.
+        if p.systems.contains(.n64), let core = manifest.core(for: .n64) {
+            files.append(RenderedFile(url: paths.coreOptions(libraryName: core.libraryName), kind: .retroarchKeys([
+                "mupen64plus-rdp-plugin": "parallel",
+                "mupen64plus-rsp-plugin": "parallel",
+            ])))
+        }
+
         files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += Pcsx2Renderer.files(p, rules: rules, paths: paths, chip: chip)
