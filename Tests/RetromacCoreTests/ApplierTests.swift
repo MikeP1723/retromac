@@ -89,3 +89,20 @@ func renderInto(_ home: URL) throws -> [RenderedFile] {
     #expect(override.contains("run_ahead_enabled = \"true\""))
     #expect(try applier.apply(try renderInto(home)).written.isEmpty)
 }
+// A console that's unticked, or loses its BIOS or emulator, must leave ES-DE's list; the user's own systems stay.
+@Test func droppedRetromacSystemsLeaveESDE() throws {
+    let existing = """
+        <?xml version="1.0"?>
+        <systemList>
+            <system><name>xbox</name><path>%ROMPATH%/xbox</path><command label="xemu">%EMULATOR_XEMU% -dvd_path %ROM%</command></system>
+            <system><name>snes</name><path>/Volumes/roms/snes</path><command label="bsnes">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/bsnes_libretro.dylib %ROM%</command></system>
+            <system><name>ps2</name><fullname>Mine</fullname><command label="PCSX2">pcsx2 %ROM%</command></system>
+            <system><name>mynes</name><command label="Mine">%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/mesen_libretro.dylib %ROM%</command></system>
+        </systemList>
+        """
+    let ours = ESDESystems.xml(for: [.nes], manifest: .fixture(), library: URL(filePath: "/lib"))
+    let xml = try ESDESystems.merge(existing: existing, ours: ours)
+    #expect(!xml.contains("<name>xbox</name>") && !xml.contains("<name>snes</name>"))
+    #expect(xml.contains("<fullname>Mine</fullname>") && xml.contains("<name>mynes</name>"))
+    #expect(xml.contains("<name>nes</name>"))
+}
