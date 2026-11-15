@@ -101,10 +101,13 @@ public enum ProfileRenderer {
         files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += Pcsx2Renderer.files(p, rules: rules, paths: paths, chip: chip)
 
-        files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
+        // ES-DE lists any built-in system with a folder under ROMDirectory, so it points at an empty folder
+        // and each of our systems names its library folder (see ESDESystems.xml).
+        files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: paths.esdeRomDirectory.path)))
+        files.append(RenderedFile(url: paths.esdeRomDirectory, kind: .directory))
         files.append(RenderedFile(url: paths.esdeFindRules,
                                   kind: .whole(ESDESystems.findRules(paths: paths))))
-        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: esdeSystems(p, paths: paths, bios: bios), manifest: manifest))))
+        files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: esdeSystems(p, paths: paths, bios: bios), manifest: manifest, library: p.libraryRoot))))
 
         // Console folders, never on a read-only network library.
         for system in p.systems where !p.isLibraryReadOnly {

@@ -80,6 +80,8 @@ public struct Paths: Sendable {
     public var esdeHome: URL { root }
     public var esdeRoot: URL { esdeHome.appending(path: "ES-DE") }
     public var esdeSettings: URL { esdeRoot.appending(path: "settings/es_settings.xml") }
+    /// ES-DE's ROMDirectory: kept empty, so ES-DE finds none of its built-in systems; ours name their folders.
+    public var esdeRomDirectory: URL { esdeRoot.appending(path: "roms") }
     public var esdeCustomSystems: URL { esdeRoot.appending(path: "custom_systems/es_systems.xml") }
     public var esdeFindRules: URL { esdeRoot.appending(path: "custom_systems/es_find_rules.xml") }
 }

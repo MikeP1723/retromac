@@ -23,14 +23,14 @@ import Testing
     _ = try XMLDocument(xmlString: xml)
 }
 @Test func gamecubeLaunchesDolphin() throws {
-    let xml = ESDESystems.xml(for: [.gc, .wii], manifest: try Manifest.bundled())
+    let xml = ESDESystems.xml(for: [.gc, .wii], manifest: try Manifest.bundled(), library: URL(filePath: "/r"))
     for needle in ["<name>gc</name>", "<name>wii</name>", "%EMULATOR_DOLPHIN% -b -e %ROM%", "label=\"Dolphin\"", ".rvz", ".wbfs"] {
         #expect(xml.contains(needle), "missing \(needle)")
     }
     #expect(!xml.contains(".gcz"))
 }
 @Test func xboxLaunchesXemu() throws {
-    let xml = ESDESystems.xml(for: [.xbox], manifest: try Manifest.bundled())
+    let xml = ESDESystems.xml(for: [.xbox], manifest: try Manifest.bundled(), library: URL(filePath: "/r"))
     #expect(xml.contains("<name>xbox</name>") && xml.contains("%EMULATOR_XEMU% -dvd_path %ROM%") && xml.contains(".xiso"))
 }
 @Test func rendererWritesFindRules() throws {
@@ -43,7 +43,7 @@ import Testing
         == ["--home", "/tmp/my home/Library/Application Support/retromac"])
 }
 @Test func ps2LaunchesPcsx2() throws {
-    let xml = ESDESystems.xml(for: [.ps2], manifest: try Manifest.bundled())
+    let xml = ESDESystems.xml(for: [.ps2], manifest: try Manifest.bundled(), library: URL(filePath: "/r"))
     for needle in ["<name>ps2</name>", "Sony PlayStation 2", "%EMULATOR_PCSX2% -batch -nogui -fullscreen %ROM%", ".chd", ".iso"] {
         #expect(xml.contains(needle), "missing \(needle)")
     }

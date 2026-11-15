@@ -44,8 +44,8 @@ private func lib(_ text: String) throws -> NetworkLibrary {
 @Test func noConsoleFoldersAreCreatedOnTheShare() throws {
     var p = profile(systems: [.nes, .snes])
     p.useNetworkLibrary(URL(string: "smb://nas/roms")!, at: URL(filePath: "/Volumes/roms"))
-    #expect(!(try render(p)).contains { $0.kind == .directory })
-    #expect((try render(profile(systems: [.nes]))).contains { $0.kind == .directory })
+    #expect(!(try render(p)).contains { $0.kind == .directory && $0.url.path.hasPrefix("/Volumes/roms") })
+    #expect((try render(profile(systems: [.nes]))).contains { $0.kind == .directory && $0.url.lastPathComponent == "nes" })
 }
 @Test func networkLibraryIsNeverResetWhenOffline() throws {
     let paths = Paths(home: try makeTempDir())
