@@ -38,6 +38,10 @@
     "xbox": {
       "nativeHeight": 480,
       "maxScale": 4
+    },
+    "ps2": {
+      "nativeHeight": 448,
+      "maxScale": 4
     }
   },
   "baseChips": [

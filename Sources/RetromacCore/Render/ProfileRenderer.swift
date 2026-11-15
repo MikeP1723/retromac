@@ -91,6 +91,7 @@ public enum ProfileRenderer {
 
         files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
+        files += Pcsx2Renderer.files(p, rules: rules, paths: paths, chip: chip)
 
         files.append(RenderedFile(url: paths.esdeSettings, kind: .esdeSettings(romDirectory: p.libraryRoot.path)))
         files.append(RenderedFile(url: paths.esdeFindRules,

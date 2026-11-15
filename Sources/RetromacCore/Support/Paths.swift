@@ -52,6 +52,10 @@ public struct Paths: Sendable {
 
     /// Dolphin's user folder on macOS (its default; retromac doesn't move it).
     public var dolphinConfig: URL { home.appending(path: "Library/Application Support/Dolphin/Config") }
+    /// PCSX2's data folder on macOS (QtHost.cpp MAC_DATA_DIR); settings in inis/PCSX2.ini.
+    public var pcsx2Settings: URL { home.appending(path: "Library/Application Support/PCSX2/inis/PCSX2.ini") }
+    /// PS2 BIOS files, apart from RetroArch's own so PCSX2 only scans its own.
+    public var ps2Bios: URL { retroarchSystem.appending(path: "pcsx2/bios") }
     /// xemu's own folder (`SDL_GetPrefPath("xemu", "xemu")` is `xemu/xemu` inside it).
     public var xemuSupport: URL { home.appending(path: "Library/Application Support/xemu") }
     /// The emulated Xbox's hard disk; it holds game saves, so it's installed once and never replaced.
