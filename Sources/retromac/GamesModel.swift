@@ -168,7 +168,7 @@ final class GamesModel {
         convertibleCount = ChdTool(runner: ProcessRunner()).hasHomebrew ? ChdTool.convertible(in: libraryRoot()).count : 0
     }
 
-    /// Converts every PS1/Saturn cue set to CHD, one game at a time; a game that fails keeps its files.
+    /// Converts every PS1/Saturn cue set and PS2 disc image to CHD, one game at a time; a game that fails keeps its files.
     func convertToCHD() async {
         guard !busy else { return }
         converting = true
@@ -194,7 +194,7 @@ final class GamesModel {
             let stem = cue.deletingPathExtension().lastPathComponent
             convertProgress = "Converting \((index + 1).formatted()) of \(cues.count.formatted()): \(stem)"
             do {
-                _ = try await Task.detached { try tool.convert(cue: cue) }.value
+                _ = try await Task.detached { try tool.convert(disc: cue) }.value
             } catch {
                 failed.append(stem)
             }

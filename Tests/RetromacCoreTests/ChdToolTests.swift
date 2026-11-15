@@ -14,7 +14,7 @@ final class FakeChdman: CommandRunner, @unchecked Sendable {
 
     func run(_ executable: String, _ args: [String], input: String?) throws -> String {
         lock.withLock { _calls.append([URL(filePath: executable).lastPathComponent] + args) }
-        if args.first == "createcd", let out = args.firstIndex(of: "-o").map({ args[$0 + 1] }) {
+        if args.first == "createcd" || args.first == "createdvd", let out = args.firstIndex(of: "-o").map({ args[$0 + 1] }) {
             try Data("MComprHD".utf8).write(to: URL(filePath: out))
         }
         if args.first == failing { throw InstallError.commandFailed(executable, 1, "\(failing!) failed") }
@@ -150,4 +150,49 @@ func realChdmanRoundTrip() throws {
         .write(to: dir.appending(path: "Game.cue"), atomically: true, encoding: .utf8)
     _ = try ChdTool(runner: FakeChdman(), chdman: URL(filePath: "/opt/homebrew/bin/chdman")).convert(cue: dir.appending(path: "Game.cue"))
     #expect(try names(dir) == ["Game.chd", "Other Game.bin"])
+}
+
+private func ps2Folder() throws -> URL {
+    let dir = try makeTempDir().appending(path: "Library/ps2")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}
+
+@Test func ps2IsoConvertsWithCreatedvd() throws {
+    let dir = try ps2Folder()
+    let iso = dir.appending(path: "Game.iso")
+    try Data(count: 2048 * 4).write(to: iso)
+    let runner = FakeChdman()
+    let chd = try ChdTool(runner: runner, chdman: URL(filePath: "/opt/homebrew/bin/chdman")).convert(iso: iso)
+    #expect(chd == dir.appending(path: "Game.chd"))
+    #expect(try names(dir) == ["Game.chd"])
+    let tmp = try #require(runner.calls.first?.last)
+    #expect(runner.calls == [["chdman", "createdvd", "-i", iso.path, "-o", tmp], ["chdman", "verify", "-i", tmp]])
+}
+@Test func failedPs2ConversionKeepsTheIso() throws {
+    let dir = try ps2Folder()
+    let iso = dir.appending(path: "Game.iso")
+    try Data(count: 2048).write(to: iso)
+    #expect(throws: InstallError.self) {
+        try ChdTool(runner: FakeChdman(failing: "verify"), chdman: URL(filePath: "/opt/homebrew/bin/chdman")).convert(iso: iso)
+    }
+    #expect(try names(dir) == ["Game.iso"])
+}
+@Test func convertibleListsPs2Isos() throws {
+    let dir = try ps2Folder(), root = dir.deletingLastPathComponent()
+    try Data(count: 2048).write(to: dir.appending(path: "A.iso"))
+    try Data(count: 2048).write(to: dir.appending(path: "B.iso"))
+    try Data(count: 16).write(to: dir.appending(path: "B.chd"))
+    #expect(ChdTool.convertible(in: root).map(\.lastPathComponent) == ["A.iso"])
+    try Data(count: 16).write(to: dir.appending(path: ".retromac-x.chd"))
+    ChdTool.removeLeftovers(in: root)
+    #expect(!FileManager.default.fileExists(atPath: dir.appending(path: ".retromac-x.chd").path))
+}
+@Test(.enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/chdman")))
+func realChdmanDvdRoundTrip() throws {
+    let dir = try ps2Folder()
+    let iso = dir.appending(path: "Tiny.iso")
+    try Data((0..<(2048 * 1024)).map { UInt8(truncatingIfNeeded: $0 &* 13) }).write(to: iso)
+    _ = try ChdTool(runner: ProcessRunner()).convert(iso: iso)
+    #expect(try names(dir) == ["Tiny.chd"])
 }
