@@ -9,6 +9,7 @@ struct SwitchSetupCard: View {
     @Bindable var model: WizardModel
     @State private var status: Ryubing.Status = .notInstalled
     @State private var message: String?
+    @State private var applied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -33,7 +34,7 @@ struct SwitchSetupCard: View {
                 }
             }
             if confirmed, message == nil, let ready = readyText {
-                step(3, "Ready", done: Ryubing.isLive(model.profile, paths: model.paths)) {
+                step(3, "Ready", done: applied) {
                     Text(ready).font(.caption).foregroundStyle(status == .ready ? Color.secondary : Color.orange)
                 }
             }
@@ -48,14 +49,18 @@ struct SwitchSetupCard: View {
 
     private var readyText: String? {
         switch status {
-        case .ready: Ryubing.ready
+        // Only once an apply wrote Ryubing's settings: a Done refused while Ryubing was open wrote nothing.
+        case .ready: applied ? Ryubing.ready : nil
         case .noConfig: Ryubing.noConfig
         case .unknownVersion: Ryubing.unknownVersion
         case .notInstalled: nil
         }
     }
 
-    private func refresh() { status = Ryubing.status(paths: model.paths) }
+    private func refresh() {
+        status = Ryubing.status(paths: model.paths)
+        applied = RyubingRenderer.isApplied(model.profile, paths: model.paths)
+    }
 
     private func step(_ n: Int, _ title: String, done: Bool, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -17,5 +17,13 @@ public enum RyubingRenderer {
         return recorded
     }
 
+    /// Whether Ryubing's settings already hold what an apply would write: the card's "Ready" step shows only
+    /// then, not merely because Done was clicked (an apply refused while Ryubing was open writes nothing).
+    public static func isApplied(_ p: Profile, paths: Paths) -> Bool {
+        guard Ryubing.isLive(p, paths: paths),
+              let current = try? String(contentsOf: paths.ryubingConfig, encoding: .utf8) else { return false }
+        return RyubingConfig.merge(existing: current, gameDir: gameDir(p), replacing: p.switchSetup?.gameDir) == current
+    }
+
     static func gameDir(_ p: Profile) -> String { p.libraryRoot.appending(path: SystemID.switch.rawValue).path }
 }

@@ -43,3 +43,11 @@ private func object(_ json: String?) throws -> [String: Any] {
     #expect(RyubingConfig.merge(existing: once, gameDir: "/lib/switch", replacing: nil) == once)
     #expect(once.contains(#""/a/b""#))
 }
+
+@Test func mergeLeavesAFileThatIsAlreadySetUntouched() {
+    // Ryubing's own formatting, with retromac's values already in place: no rewrite, so no new backup.
+    let ryubing = "{\n  \"version\": 70,\n  \"res_scale_custom\": 0.1,\n  \"show_confirm_exit\": false,\n  \"update_checker_type\": \"Off\",\n  \"game_dirs\": [\n    \"/mine\",\n    \"/lib/switch\"\n  ]\n}"
+    #expect(RyubingConfig.merge(existing: ryubing, gameDir: "/lib/switch", replacing: "/lib/switch") == ryubing)
+    #expect(RyubingConfig.merge(existing: ryubing, gameDir: "/lib/switch", replacing: nil) == ryubing)
+    #expect(RyubingConfig.merge(existing: ryubing, gameDir: "/lib2/switch", replacing: "/lib/switch") != ryubing)
+}

@@ -103,3 +103,15 @@ private func findRules(_ files: [RenderedFile], _ paths: Paths) -> String? {
     let notLive = switchProfile(confirmed: false)
     #expect(RyubingRenderer.applied(notLive, paths: paths) == notLive)
 }
+
+@Test func readyOnlyAfterAnApplyMadeSwitchLive() throws {
+    let paths = try ryubingPaths(config: #"{"version": 70, "show_confirm_exit": true}"#)
+    let p = switchProfile(library: try makeTempDir())
+    #expect(!RyubingRenderer.isApplied(p, paths: paths))  // Done was refused: Ryubing still asks on exit
+    _ = try Applier(paths: paths, apps: [], isRunning: { _ in false }).apply(try renderWith(p, paths))
+    #expect(RyubingRenderer.isApplied(p, paths: paths))
+    #expect(RyubingRenderer.isApplied(RyubingRenderer.applied(p, paths: paths), paths: paths))
+    var moved = RyubingRenderer.applied(p, paths: paths); moved.libraryRoot = URL(filePath: "/lib2")
+    #expect(!RyubingRenderer.isApplied(moved, paths: paths))
+    #expect(!RyubingRenderer.isApplied(switchProfile(library: p.libraryRoot, confirmed: false), paths: paths))
+}
