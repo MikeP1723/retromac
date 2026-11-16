@@ -23,6 +23,17 @@ struct SystemsStep: View {
                         }
                     }
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(SystemID.switch.displayName, isOn: Binding(
+                        get: { model.profile.systems.contains(.switch) },
+                        set: { on in
+                            if on { model.profile.systems.insert(.switch) } else { model.profile.systems.remove(.switch) }
+                        }))
+                    Text(Ryubing.warning).font(.caption).foregroundStyle(.orange)
+                    if model.profile.systems.contains(.switch) {
+                        SwitchSetupCard(model: model).padding(.top, 6)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

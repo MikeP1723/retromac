@@ -9,7 +9,8 @@ final class GamesModel {
     var datError: String?
     var datProgress: String?
     /// Consoles retromac can install an emulator for; others are filed and wait for a later update.
-    let installable: Set<SystemID> = Set((try? Manifest.bundled())?.installableSystems ?? [])
+    /// Switch has no manifest entry: the user installs Ryubing (see SwitchSetupCard).
+    let installable: Set<SystemID> = Set((try? Manifest.bundled())?.installableSystems ?? []).union([.switch])
     private var analysis: Task<Void, Never>?
     var candidates: [ImportCandidate] = []
     /// What's running; each is shown and cancelled separately, and only one copy can run at a time.

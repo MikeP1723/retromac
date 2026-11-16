@@ -88,6 +88,24 @@ final class WizardModel {
         if !profile.isLibraryReadOnly { DiscSets.organizeLibrary(profile.libraryRoot) }
     }
 
+    /// The Switch card's Done: the tick is saved whatever happens, then configs are re-applied so Switch joins
+    /// ES-DE. Returns what to show when that didn't happen.
+    func confirmSwitchSetup() -> String? {
+        if profile.switchSetup == nil { profile.switchSetup = SwitchSetup(confirmed: true) }
+        profile.switchSetup?.confirmed = true
+        do {
+            try profile.save(to: paths.profile)
+            try applyConfigs()
+            return nil
+        } catch ApplyError.appRunning("Ryujinx.app") {
+            return Ryubing.quitFirst
+        } catch ApplyError.appRunning(let app) {
+            return "Quit \(app.replacingOccurrences(of: ".app", with: "")), then click Done."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Saves the games folder retromac just added to Ryubing, so a moved library replaces it.
     private func recordSwitchGameDir() throws {
         let recorded = RyubingRenderer.applied(profile, paths: paths)
