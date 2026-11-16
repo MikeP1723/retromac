@@ -7,10 +7,13 @@ public struct Paths: Sendable {
     public let home: URL
     /// Where RetroArch.app and ES-DE.app are installed; retromac's own `Apps` folder by default.
     public let applications: URL
+    /// The Mac's own Applications folder, where users install apps retromac doesn't (Ryubing).
+    public let systemApplications: URL
 
-    public init(home: URL, applications: URL? = nil) {
+    public init(home: URL, applications: URL? = nil, systemApplications: URL? = nil) {
         self.home = home
         self.applications = applications ?? home.appending(path: "Library/Application Support/retromac/Apps")
+        self.systemApplications = systemApplications ?? URL(filePath: "/Applications")
     }
 
     public var root: URL { home.appending(path: "Library/Application Support/retromac") }
@@ -67,6 +70,11 @@ public struct Paths: Sendable {
     public var xemuHDD: URL { xemuSupport.appending(path: "xbox_hdd.qcow2") }
 
     public var xemuConfig: URL { xemuSupport.appending(path: "xemu/xemu.toml") }
+
+    /// Ryubing (Switch), which the user installs themselves; it keeps its macOS name, Ryujinx.
+    public var ryubingApp: URL { systemApplications.appending(path: "Ryujinx.app") }
+    public var ryubingExecutable: URL { ryubingApp.appending(path: "Contents/MacOS/Ryujinx") }
+    public var ryubingConfig: URL { home.appending(path: "Library/Application Support/Ryujinx/Config.json") }
 
     /// Where a manifest data asset is installed.
     public func assetTarget(_ asset: AssetEntry) -> URL {
