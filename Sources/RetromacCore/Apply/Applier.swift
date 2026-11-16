@@ -53,6 +53,12 @@ public struct Applier: Sendable {
             case .iniKeys(let keys): final = IniConfig.merge(existing: current ?? "", owned: keys)
             case .tomlKeys(let keys): final = TomlConfig.merge(existing: current ?? "", owned: keys)
             case .whole(let text): final = text
+            case .ryubingConfig(let dir, let replacing):
+                guard let merged = RyubingConfig.merge(existing: current, gameDir: dir, replacing: replacing) else {
+                    if current != nil { unchanged.append(file.url) }
+                    continue
+                }
+                final = merged
             case .directory: continue
             }
             final == current ? unchanged.append(file.url) : changed.append((file.url, final))

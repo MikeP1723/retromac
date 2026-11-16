@@ -13,6 +13,8 @@ public struct RenderedFile: Equatable, Sendable {
         case iniKeys([String: [String: String]])
         /// Keys (table → key → value) merged into a TOML file; every other line is kept.
         case tomlKeys([String: [String: TomlValue]])
+        /// Ryubing's Config.json: retromac's keys and games folder merged in, or left alone (see RyubingConfig).
+        case ryubingConfig(gameDir: String, replacing: String?)
         /// A file retromac owns entirely.
         case whole(String)
         case directory
@@ -100,6 +102,7 @@ public enum ProfileRenderer {
         files += DolphinRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += XemuRenderer.files(p, rules: rules, paths: paths, chip: chip)
         files += Pcsx2Renderer.files(p, rules: rules, paths: paths, chip: chip)
+        files += RyubingRenderer.files(p, paths: paths)
 
         // ES-DE lists any built-in system with a folder under ROMDirectory, so it points at an empty folder
         // and each of our systems names its library folder (see ESDESystems.xml).
@@ -129,6 +132,10 @@ public enum ProfileRenderer {
         if systems.contains(.ps2), Ps2Bios.first(in: paths.ps2Bios) == nil
             || !FileManager.default.fileExists(atPath: paths.applications.appending(path: "PCSX2.app").path) {
             systems.remove(.ps2)
+        }
+        // Switch only once its guided setup is done and Ryubing's settings are in a known format.
+        if systems.contains(.switch), !Ryubing.isLive(p, paths: paths) {
+            systems.remove(.switch)
         }
         return systems
     }

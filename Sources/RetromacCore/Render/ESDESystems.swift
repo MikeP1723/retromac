@@ -22,6 +22,7 @@ public enum ESDESystems {
         .wii: Info(fullname: "Nintendo Wii", extensions: ["iso", "rvz", "wia", "wbfs", "ciso"]),
         .xbox: Info(fullname: "Microsoft Xbox", extensions: ["iso", "xiso"]),
         .ps2: Info(fullname: "Sony PlayStation 2", extensions: ["iso", "chd"]),
+        .switch: Info(fullname: "Nintendo Switch", extensions: ["nca", "nro", "nso", "nsp", "xci"]),
     ]
 
     /// Standalone emulators: ES-DE find-rule name, executable inside the app, launch command.
@@ -32,6 +33,10 @@ public enum ESDESystems {
         // -batch: PCSX2 exits when the game shuts down, so Select+Start returns to ES-DE.
         "pcsx2": ("PCSX2", "PCSX2.app/Contents/MacOS/PCSX2", "PCSX2", "%EMULATOR_PCSX2% -batch -nogui -fullscreen %ROM%"),
     ]
+
+    /// Ryubing, which the user installs; it has no manifest entry. Docked and with no update prompt, so
+    /// ES-DE's games open straight to the game.
+    static let ryubingCommand = "%EMULATOR_RYUJINX% --fullscreen --docked-mode --hide-updates %ROM%"
 
     public static func xml(for systems: Set<SystemID>, manifest: Manifest, library: URL) -> String {
         var out = "<?xml version=\"1.0\"?>\n<systemList>\n"
@@ -44,6 +49,9 @@ public enum ESDESystems {
             } else if let app = manifest.app(for: system), let standalone = standalones[app.id] {
                 label = standalone.label
                 command = standalone.command
+            } else if system == .switch {
+                label = "Ryubing"
+                command = ryubingCommand
             } else {
                 continue
             }
@@ -65,14 +73,16 @@ public enum ESDESystems {
         return out + "</systemList>\n"
     }
 
-    /// RetroArch, then the standalones in a fixed order: what Console Mode's exit combo quits.
+    /// RetroArch, the standalones in a fixed order, then Ryubing: what Console Mode's exit combo quits.
     public static let emulatorApps = ["RetroArch.app"]
         + standalones.values.sorted { $0.rule < $1.rule }.map { String($0.executable.prefix { $0 != "/" }) }
+        + ["Ryujinx.app"]
 
     /// ES-DE's own find rules expect emulators in /Applications; these point at retromac's copies.
     public static func findRules(paths: Paths) -> String {
         let emulators = [("RETROARCH", paths.retroarchExecutable)]
             + standalones.values.sorted { $0.rule < $1.rule }.map { ($0.rule, paths.applications.appending(path: $0.executable)) }
+            + [("RYUJINX", paths.ryubingExecutable)]
         var out = """
             <?xml version="1.0"?>
             <!-- Managed by retromac — edits will be overwritten -->
@@ -123,9 +133,10 @@ public enum ESDESystems {
         return doc.xmlString(options: [.nodePrettyPrint]) + "\n"
     }
 
-    /// Written by `xml(for:)`: its RetroArch or standalone launch command, which a hand-made entry wouldn't copy.
+    /// Written by `xml(for:)`: its RetroArch, standalone or Ryubing launch command, which a hand-made entry wouldn't copy.
     private static func isOurs(_ system: XMLElement) -> Bool {
         guard let command = system.elements(forName: "command").first?.stringValue else { return false }
-        return command.hasPrefix("%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/") || standalones.values.contains { $0.command == command }
+        return command.hasPrefix("%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/") || command == ryubingCommand
+            || standalones.values.contains { $0.command == command }
     }
 }
