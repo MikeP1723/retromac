@@ -26,6 +26,12 @@ public struct Applier: Sendable {
         self.isRunning = isRunning
     }
 
+    /// The apps whose running blocks an apply: the manifest's, and Ryubing only once Switch is chosen,
+    /// so a user who never chose Switch can keep it open.
+    public static func blockingApps(manifest: Manifest, profile: Profile) -> [String] {
+        manifest.apps.map(\.appName) + (profile.systems.contains(.switch) ? ["Ryujinx.app"] : [])
+    }
+
     public func apply(_ files: [RenderedFile]) throws -> ApplyReport {
         if let running = apps.first(where: isRunning) {
             throw ApplyError.appRunning(running)

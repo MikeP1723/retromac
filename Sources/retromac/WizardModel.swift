@@ -83,8 +83,17 @@ final class WizardModel {
     func applyConfigs() throws {
         guard let manifest, let rules else { return }
         let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
-        _ = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
+        _ = try Applier(paths: paths, apps: Applier.blockingApps(manifest: manifest, profile: profile), isRunning: RunningApps.isRunning).apply(files)
+        try recordSwitchGameDir()
         if !profile.isLibraryReadOnly { DiscSets.organizeLibrary(profile.libraryRoot) }
+    }
+
+    /// Saves the games folder retromac just added to Ryubing, so a moved library replaces it.
+    private func recordSwitchGameDir() throws {
+        let recorded = RyubingRenderer.applied(profile, paths: paths)
+        guard recorded != profile else { return }
+        profile = recorded
+        try profile.save(to: paths.profile)
     }
 
     private static func load<T>(_ what: String, into errors: inout [String], _ body: () throws -> T) -> T? {
@@ -119,7 +128,8 @@ final class WizardModel {
             installed.warnings.forEach { log.append("Note: \($0)") }
 
             let files = ProfileRenderer.render(profile, manifest: manifest, rules: rules, paths: paths)
-            let report = try Applier(paths: paths, apps: manifest.apps.map(\.appName), isRunning: RunningApps.isRunning).apply(files)
+            let report = try Applier(paths: paths, apps: Applier.blockingApps(manifest: manifest, profile: profile), isRunning: RunningApps.isRunning).apply(files)
+            try recordSwitchGameDir()
             log.append("Wrote \(report.written.count) files, \(report.unchanged.count) unchanged.")
             if let backup = report.backup { log.append("Previous config backed up to \(backup.path)") }
             backups = try BackupStore(root: paths.backups, home: paths.home).list()

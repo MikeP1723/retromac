@@ -87,3 +87,19 @@ private func findRules(_ files: [RenderedFile], _ paths: Paths) -> String? {
     #expect(untouched.written.isEmpty && untouched.backup == nil)
     #expect(try String(contentsOf: unknown.ryubingConfig, encoding: .utf8) == #"{"version": 71}"#)
 }
+
+@Test func ryubingBlocksApplyOnlyForSwitch() {
+    let manifest = Manifest.fixture(), apps = manifest.apps.map(\.appName)
+    #expect(Applier.blockingApps(manifest: manifest, profile: profile(systems: [.nes])) == apps)
+    #expect(Applier.blockingApps(manifest: manifest, profile: profile(systems: [.nes, .switch])) == apps + ["Ryujinx.app"])
+}
+
+@Test func appliedRecordsTheGameDir() throws {
+    let paths = try ryubingPaths(config: #"{"version": 70}"#)
+    var p = RyubingRenderer.applied(switchProfile(library: URL(filePath: "/lib1")), paths: paths)
+    #expect(p.switchSetup == SwitchSetup(confirmed: true, gameDir: "/lib1/switch"))
+    p.libraryRoot = URL(filePath: "/lib2")
+    #expect(RyubingRenderer.files(p, paths: paths).first?.kind == .ryubingConfig(gameDir: "/lib2/switch", replacing: "/lib1/switch"))
+    let notLive = switchProfile(confirmed: false)
+    #expect(RyubingRenderer.applied(notLive, paths: paths) == notLive)
+}
