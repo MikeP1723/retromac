@@ -12,6 +12,8 @@ public enum ImportStatus: Equatable, Hashable, Sendable {
     case duplicate(SystemID?)
     case unidentified(reason: String)
     case notAGame
+    /// Recognised, but for a console retromac doesn't support (Wii U): left where it is, never copied.
+    case unsupported(SystemID)
     case failed(String)
 
     /// The system a game will be filed under, for identified and unverified games.
@@ -156,7 +158,7 @@ public struct Importer: Sendable {
             case .unidentified: summary.unidentified += 1
             case .bios: summary.bios += 1
             case .duplicate: summary.duplicates += 1
-            case .notAGame: summary.skipped += 1
+            case .notAGame, .unsupported: summary.skipped += 1
             case .failed: summary.failed += 1
             }
             summary.bytesToCopy += bytesToCopy(item)
@@ -254,6 +256,7 @@ public struct Importer: Sendable {
 
         if DiscSniffer.extensions.contains(ext), let result = DiscSniffer.sniff(real) {
             switch result {
+            case .success(let id) where id.system == .wiiu: state.candidates.append(candidate(source, .unsupported(.wiiu)))
             case .success(let id): planDisc(real, source: source, id: id, &state)
             case .failure(let unsupported): state.candidates.append(candidate(source, .unidentified(reason: unsupported.reason)))
             }

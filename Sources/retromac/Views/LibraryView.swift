@@ -260,7 +260,7 @@ struct CandidateRow: View {
         case .identified: ("checkmark.circle.fill", .green)
         case .bios: ("cpu", .green)
         case .unverified: ("circle.fill", .yellow)
-        case .duplicate, .notAGame: ("minus.circle", .secondary)
+        case .duplicate, .notAGame, .unsupported: ("minus.circle", .secondary)
         case .unidentified: ("questionmark.circle.fill", .orange)
         case .failed: ("xmark.octagon.fill", .red)
         }
@@ -275,6 +275,7 @@ struct CandidateRow: View {
         case .duplicate: return "already in library"
         case .unidentified(let reason): return "→ _Unidentified (\(reason))"
         case .notAGame: return "not a game file"
+        case .unsupported(let system): return "\(name(system)) isn't supported"
         case .failed(let reason): return reason
         }
     }

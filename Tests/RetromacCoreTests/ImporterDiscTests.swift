@@ -302,3 +302,27 @@ extension ImportRig {
     let (_, candidates) = try rig.importer.analyze([try rig.psxDisc("again", serial: "SLUS_008.92")])
     #expect(candidates.map(\.status) == [.duplicate(.psx)])
 }
+@Test func wiiUFilesAreSkippedNotCopied() throws {
+    // Wii U is de-scoped: its (often huge) files are recognised and left where they are.
+    let rig = try ImportRig()
+    let wux = try magicFile(rig.drops.appending(path: "game.wux"), Array("WUX0".utf8))
+    let src = rig.dir.appending(path: "zipsrc")
+    _ = try magicFile(src.appending(path: "app.wuhb"), Array("WUHB".utf8))
+    let zip = rig.drops.appending(path: "homebrew.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", src.path, "app.wuhb"])
+    let nes = try rig.drop("alpha.nes", nesROM())
+
+    let (session, candidates) = try rig.importer.analyze([wux, zip, nes])
+    let skipped = candidates.filter { $0.status == .unsupported(.wiiu) }
+    #expect(skipped.map(\.source).sorted() == ["game.wux", "homebrew.zip › app.wuhb"])
+    #expect(skipped.allSatisfy { $0.destination == nil })
+    let summary = Importer.summarize(candidates)
+    #expect(summary.skipped == 2)
+    #expect(summary.bytesToCopy == Int64(nesROM().count))
+
+    _ = try rig.importer.commit(session, candidates)
+    #expect(!FileManager.default.fileExists(atPath: rig.library.appending(path: "wiiu").path))
+    #expect(!FileManager.default.fileExists(atPath: rig.library.appending(path: "_Unidentified").path))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: rig.library.appending(path: "nes").path).count == 1)
+    #expect(FileManager.default.fileExists(atPath: wux.path))
+}
