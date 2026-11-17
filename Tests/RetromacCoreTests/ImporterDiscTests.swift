@@ -302,3 +302,63 @@ extension ImportRig {
     let (_, candidates) = try rig.importer.analyze([try rig.psxDisc("again", serial: "SLUS_008.92")])
     #expect(candidates.map(\.status) == [.duplicate(.psx)])
 }
+@Test func wiiUFilesAreSkippedNotCopied() throws {
+    // Wii U is de-scoped: its (often huge) files are recognised and left where they are.
+    let rig = try ImportRig()
+    let wux = try magicFile(rig.drops.appending(path: "game.wux"), Array("WUX0".utf8))
+    let src = rig.dir.appending(path: "zipsrc")
+    _ = try magicFile(src.appending(path: "app.wuhb"), Array("WUHB".utf8))
+    let zip = rig.drops.appending(path: "homebrew.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", src.path, "app.wuhb"])
+    let nes = try rig.drop("alpha.nes", nesROM())
+
+    let (session, candidates) = try rig.importer.analyze([wux, zip, nes])
+    let skipped = candidates.filter { $0.status == .unsupported(.wiiu) }
+    #expect(skipped.map(\.source).sorted() == ["game.wux", "homebrew.zip › app.wuhb"])
+    #expect(skipped.allSatisfy { $0.destination == nil })
+    // Not even unpacked: a zipped Wii U image would otherwise fill the temp folder first.
+    #expect(!Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: ProcessRunner())
+        .walk(session.dir).contains { $0.0.pathExtension == "wuhb" })
+    let summary = Importer.summarize(candidates)
+    #expect(summary.skipped == 2)
+    #expect(summary.bytesToCopy == Int64(nesROM().count))
+
+    _ = try rig.importer.commit(session, candidates)
+    #expect(!FileManager.default.fileExists(atPath: rig.library.appending(path: "wiiu").path))
+    #expect(!FileManager.default.fileExists(atPath: rig.library.appending(path: "_Unidentified").path))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: rig.library.appending(path: "nes").path).count == 1)
+    #expect(FileManager.default.fileExists(atPath: wux.path))
+}
+@Test func wiiUFolderDumpIsSkippedAsOneTitle() throws {
+    let rig = try ImportRig()
+    let title = rig.drops.appending(path: "Game [ABCD01]")
+    _ = try magicFile(title.appending(path: "code/game.rpx"), [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01, 0xCA])
+    try write("rpl", to: title.appending(path: "code/lib.rpl"))
+    try write(String(repeating: "x", count: 4096), to: title.appending(path: "content/data.bin"))
+    try write("<menu/>", to: title.appending(path: "meta/meta.xml"))
+    let nes = try rig.drop("alpha.nes", nesROM())
+
+    let (session, candidates) = try rig.importer.analyze([title, nes])
+    #expect(candidates.filter { $0.source.hasPrefix("Game [ABCD01]") }.map(\.source) == ["Game [ABCD01]"])
+    #expect(candidates.first { $0.source == "Game [ABCD01]" }?.status == .unsupported(.wiiu))
+    _ = try rig.importer.commit(session, candidates)
+    #expect(!FileManager.default.fileExists(atPath: rig.library.appending(path: "_Unidentified").path))
+    #expect(FileManager.default.fileExists(atPath: rig.library.appending(path: "nes").path))
+}
+@Test func zippedWiiUFolderDumpIsNeverUnpacked() throws {
+    let rig = try ImportRig()
+    let src = rig.dir.appending(path: "zipsrc")
+    _ = try magicFile(src.appending(path: "Game [ABCD01]/code/game.rpx"), [0x7F, 0x45, 0x4C, 0x46, 0x01, 0x02, 0x01, 0xCA])
+    try write(String(repeating: "x", count: 4096), to: src.appending(path: "Game [ABCD01]/content/data.bin"))
+    try write(String(repeating: "y", count: 4096), to: src.appending(path: "Game [ABCD01]x/content/data.bin"))  // a look-alike name stays
+    try Data(nesROM()).write(to: src.appending(path: "alpha.nes"))
+    let zip = rig.drops.appending(path: "dump.zip")
+    try ProcessRunner().run("/usr/bin/tar", ["-a", "-cf", zip.path, "-C", src.path, "Game [ABCD01]", "Game [ABCD01]x", "alpha.nes"])
+
+    let (session, candidates) = try rig.importer.analyze([zip])
+    #expect(candidates.filter { $0.status == .unsupported(.wiiu) }.map(\.source) == ["dump.zip › Game [ABCD01]"])
+    #expect(candidates.contains { $0.source == "dump.zip › Game [ABCD01]x/content/data.bin" })
+    #expect(candidates.contains { $0.status.system == .nes })
+    let unpacked = Importer(libraryRoot: rig.library, dats: DatStore(paths: rig.paths), runner: ProcessRunner()).walk(session.dir).map(\.1)
+    #expect(!unpacked.contains { $0.contains("Game [ABCD01]/") })
+}

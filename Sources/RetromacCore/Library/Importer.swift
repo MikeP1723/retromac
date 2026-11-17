@@ -12,6 +12,8 @@ public enum ImportStatus: Equatable, Hashable, Sendable {
     case duplicate(SystemID?)
     case unidentified(reason: String)
     case notAGame
+    /// Recognised, but for a console retromac doesn't support (Wii U): left where it is, never copied.
+    case unsupported(SystemID)
     case failed(String)
 
     /// The system a game will be filed under, for identified and unverified games.
@@ -156,7 +158,7 @@ public struct Importer: Sendable {
             case .unidentified: summary.unidentified += 1
             case .bios: summary.bios += 1
             case .duplicate: summary.duplicates += 1
-            case .notAGame: summary.skipped += 1
+            case .notAGame, .unsupported: summary.skipped += 1
             case .failed: summary.failed += 1
             }
             summary.bytesToCopy += bytesToCopy(item)
@@ -196,9 +198,20 @@ public struct Importer: Sendable {
     func handleGroup(_ files: [(URL, String)], depth: Int, _ state: inout Analysis) {
         let cues = files.filter { $0.0.pathExtension.lowercased() == "cue" }
         let claimed = Set(cues.flatMap { DiscSniffer.cueFiles($0.0).map { $0.url.standardizedFileURL.path.lowercased() } })
+        // Wii U title folders (code/, content/, meta/) are skipped whole: one row, none of their files filed.
+        var wiiUTitles: [String: String] = [:]
+        for (file, source) in files {
+            guard let root = Self.wiiUTitleRoot(file.standardizedFileURL.path) else { continue }
+            let suffix = "/" + file.pathComponents.suffix(2).joined(separator: "/")
+            wiiUTitles[root + "/"] = source.hasSuffix(suffix) && source.count > suffix.count
+                ? String(source.dropLast(suffix.count)) : URL(filePath: root).lastPathComponent
+        }
+        var reported: Set<String> = []
         for (file, source) in files {
             if Task.isCancelled { return }
-            if !claimed.contains(file.standardizedFileURL.path.lowercased()) {
+            if let (root, title) = wiiUTitles.first(where: { file.standardizedFileURL.path.hasPrefix($0.key) }) {
+                if reported.insert(root).inserted { state.candidates.append(candidate(title, .unsupported(.wiiu))) }
+            } else if !claimed.contains(file.standardizedFileURL.path.lowercased()) {
                 handle(file, source: source, depth: depth, &state)
             }
             if depth == 0 {
@@ -254,6 +267,7 @@ public struct Importer: Sendable {
 
         if DiscSniffer.extensions.contains(ext), let result = DiscSniffer.sniff(real) {
             switch result {
+            case .success(let id) where id.system == .wiiu: state.candidates.append(candidate(source, .unsupported(.wiiu)))
             case .success(let id): planDisc(real, source: source, id: id, &state)
             case .failure(let unsupported): state.candidates.append(candidate(source, .unidentified(reason: unsupported.reason)))
             }
@@ -311,11 +325,28 @@ public struct Importer: Sendable {
             state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
             return
         }
-        let members: [(size: Int, name: String)] = listing.split(separator: "\n").compactMap { line in
+        let listed: [(size: Int, name: String)] = listing.split(separator: "\n").compactMap { line in
             let columns = line.split(separator: " ", omittingEmptySubsequences: true)
             guard columns.count > 8, let size = Int(columns[4]) else { return nil }
             return (size, columns.dropFirst(8).joined(separator: " "))
         }
+        // Wii U members are reported from the listing and never unpacked: they're often many gigabytes.
+        let titleRoots = Set(listed.compactMap { Self.wiiUTitleRoot("/" + $0.name) })
+        let titleOf = { (name: String) in titleRoots.first { ("/" + name).hasPrefix($0 + "/") } }
+        var excluded: [String] = []
+        for root in titleRoots.sorted() {
+            state.candidates.append(candidate(root.isEmpty ? source : "\(source) › \(root.dropFirst())", .unsupported(.wiiu)))
+            excluded.append(root.isEmpty ? "*" : Self.tarPattern(String(root.dropFirst())))
+        }
+        for member in listed where titleOf(member.name) == nil
+            && Self.wiiUExtensions.contains(URL(filePath: member.name).pathExtension.lowercased()) {
+            state.candidates.append(candidate("\(source) › \(member.name)", .unsupported(.wiiu)))
+            excluded.append(Self.tarPattern(member.name))
+        }
+        let members = listed.filter { member in
+            titleOf(member.name) == nil && !Self.wiiUExtensions.contains(URL(filePath: member.name).pathExtension.lowercased())
+        }
+        guard members.contains(where: { !$0.name.hasSuffix("/") }) else { return }
         let total = members.reduce(0) { $0 + $1.size }
         if total > Self.maxArchiveBytes {
             state.candidates.append(candidate(source, .unidentified(reason: "archive too large to unpack")))
@@ -341,7 +372,7 @@ public struct Importer: Sendable {
             out = state.session.dir.appending(path: UUID().uuidString)
             do {
                 try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-                try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", out.path])
+                try runner.run("/usr/bin/tar", ["-xf", archive.path, "-C", out.path] + excluded.flatMap { ["--exclude", $0] })
             } catch {
                 state.candidates.append(failed(source, "couldn't open archive: \(Self.firstLine(of: error))"))
                 return
@@ -630,6 +661,23 @@ public struct Importer: Sendable {
     }
 
     /// Regular, non-hidden files under `root` with their root-relative paths.
+    /// Files only Wii U uses; a title folder is recognised by its code/*.rpx (see `wiiUTitleRoot`).
+    static let wiiUExtensions: Set<String> = ["wud", "wux", "wua", "wuhb", "rpx"]
+
+    /// The title folder of a Wii U `<title>/code/<name>.rpx` path, without a trailing slash.
+    static func wiiUTitleRoot(_ path: String) -> String? {
+        let url = URL(filePath: path)
+        guard url.pathExtension.lowercased() == "rpx",
+              url.deletingLastPathComponent().lastPathComponent.lowercased() == "code" else { return nil }
+        let root = url.deletingLastPathComponent().deletingLastPathComponent().path
+        return root == "/" ? "" : root
+    }
+
+    /// A tar --exclude pattern matching exactly `name` (and everything under it).
+    static func tarPattern(_ name: String) -> String {
+        String(name.flatMap { "[]*?\\".contains($0) ? ["\\", $0] : [$0] })
+    }
+
     func walk(_ root: URL) -> [(URL, String)] {
         let base = root.standardizedFileURL.path + "/"
         let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey],

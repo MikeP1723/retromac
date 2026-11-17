@@ -67,6 +67,7 @@ func importGames(_ args: [String]) throws {
         case .duplicate(let system): print("duplicate \(system?.rawValue ?? "_Unidentified") \(file)")
         case .unidentified(let reason): print("unidentified \(reason) \(item.source)")
         case .notAGame: print("skip \(item.source)")
+        case .unsupported(let system): print("skip \(item.source) (\(system.displayName) isn't supported)")
         case .failed(let reason): print("FAIL \(item.source) \(reason)")
         }
     }
