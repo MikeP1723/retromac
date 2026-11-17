@@ -177,6 +177,12 @@ func isRunning(_ appName: String) -> Bool {
     NSWorkspace.shared.runningApplications.contains { $0.bundleURL?.lastPathComponent == appName }
 }
 
+/// Saves the games folder retromac just added to Ryubing, so a moved library replaces it.
+func record(_ profile: Profile, to url: URL, paths: Paths) throws {
+    let recorded = RyubingRenderer.applied(profile, paths: paths)
+    if recorded != profile { try recorded.save(to: url) }
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 do {
     switch args.first {
@@ -207,7 +213,8 @@ do {
         if !args.contains("--dry-run"), let profile = try? Profile.load(from: p.profile) {
             let manifest = try Manifest.bundled()
             let files = ProfileRenderer.render(profile, manifest: manifest, rules: try DisplayRules.bundled(), paths: p)
-            let applied = try Applier(paths: p, apps: manifest.apps.map(\.appName), isRunning: isRunning).apply(files)
+            let applied = try Applier(paths: p, apps: Applier.blockingApps(manifest: manifest, profile: profile), isRunning: isRunning).apply(files)
+            try record(profile, to: p.profile, paths: p)
             print("configs: wrote \(applied.written.count), unchanged \(applied.unchanged.count)")
         }
     case "play":
@@ -244,9 +251,10 @@ do {
         guard let file = option("--profile", in: args) else { fail(usage) }
         let manifest = try Manifest.bundled()
         let p = paths(args)
-        let files = ProfileRenderer.render(try Profile.load(from: URL(filePath: file)), manifest: manifest,
-                                           rules: try DisplayRules.bundled(), paths: p)
-        let report = try Applier(paths: p, apps: manifest.apps.map(\.appName), isRunning: isRunning).apply(files)
+        let profile = try Profile.load(from: URL(filePath: file))
+        let files = ProfileRenderer.render(profile, manifest: manifest, rules: try DisplayRules.bundled(), paths: p)
+        let report = try Applier(paths: p, apps: Applier.blockingApps(manifest: manifest, profile: profile), isRunning: isRunning).apply(files)
+        try record(profile, to: URL(filePath: file), paths: p)
         report.written.forEach { print("wrote \($0.path)") }
         print("unchanged: \(report.unchanged.count)")
         if let backup = report.backup { print("backup: \(backup.path)") }

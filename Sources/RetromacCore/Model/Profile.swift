@@ -46,6 +46,17 @@ public struct DisplayProfile: Codable, Equatable, Sendable {
     }
 }
 
+/// The guided Switch setup: whether the user clicked Done, and the games folder retromac added to
+/// Ryubing, so a moved library replaces it instead of leaving it behind.
+public struct SwitchSetup: Codable, Equatable, Sendable {
+    public var confirmed: Bool
+    public var gameDir: String?
+
+    public init(confirmed: Bool, gameDir: String? = nil) {
+        self.confirmed = confirmed; self.gameDir = gameDir
+    }
+}
+
 /// Everything the wizard asks or detects; the single source of truth for rendering.
 public struct Profile: Codable, Equatable, Sendable {
     public var display: DisplayProfile
@@ -58,6 +69,8 @@ public struct Profile: Codable, Equatable, Sendable {
     public var console: ConsoleSettings?
     /// A server share used as the library instead of the local one; nil for the local library.
     public var networkLibrary: NetworkLibrary?
+    /// Progress through the guided Switch setup; nil until the user starts it.
+    public var switchSetup: SwitchSetup?
 
     /// A network library is never written to: no imports, conversions, organizing or created folders.
     public var isLibraryReadOnly: Bool { networkLibrary != nil }
