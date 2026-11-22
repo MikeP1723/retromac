@@ -29,6 +29,22 @@ fi
 # Into Contents/Resources so Bundle.main finds them (SwiftPM's resource bundle would
 # have to sit at the .app root, which breaks code signing).
 cp Sources/RetromacCore/Resources/*.json "$app/Contents/Resources/"
+# The icon: Assets.car for macOS 26's Liquid Glass and AppIcon.icns for earlier releases. actool ships with Xcode,
+# not the Command Line Tools; without it the build has the generic icon (check-bundle.sh refuses that for a release).
+if xcrun --find actool >/dev/null 2>&1; then
+    icon="$(mktemp -d)"
+    # An absolute path: actool can't open a relative one, and reports that with exit status 0.
+    xcrun actool "$PWD/Support/AppIcon.icon" --compile "$icon" --app-icon AppIcon --platform macosx \
+        --minimum-deployment-target 14.0 --output-partial-info-plist "$icon/partial.plist" >/dev/null
+    [[ -s "$icon/Assets.car" && -s "$icon/AppIcon.icns" ]] || { echo "error: actool produced no icon" >&2; exit 1; }
+    mkdir -p "$agent/Contents/Resources"
+    for dest in "$app/Contents/Resources" "$agent/Contents/Resources"; do
+        cp "$icon/Assets.car" "$icon/AppIcon.icns" "$dest/"
+    done
+    rm -rf "$icon"
+else
+    echo "warning: actool not found (install Xcode); building without the app icon" >&2
+fi
 # Inside out: the outer signature seals the nested app's.
 identity="${RETROMAC_SIGN_IDENTITY:--}"
 flags=(--force --sign "$identity")
