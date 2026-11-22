@@ -37,11 +37,6 @@ scripts/bundle.sh        # produces build/retromac.app (ad-hoc signed)
 
 Requires macOS 14+ on Apple Silicon and a Swift 6 toolchain (Xcode or Command Line Tools).
 
-## Opening an unsigned app
-
-retromac is not notarized. On macOS 15 and later, the first launch is blocked; open
-**System Settings › Privacy & Security**, scroll to the message about retromac, and click **Open Anyway**.
-
 ## What retromac does not provide
 
 retromac does not provide games, BIOS files, firmware, or keys. You supply your own legally obtained dumps.
