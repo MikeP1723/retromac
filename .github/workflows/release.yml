@@ -13,6 +13,7 @@ jobs:
       - name: Build and zip
         run: |
           RETROMAC_VERSION="${GITHUB_REF_NAME#v}" scripts/bundle.sh
+          scripts/check-bundle.sh "${GITHUB_REF_NAME#v}"
           ditto -c -k --keepParent build/retromac.app retromac.zip
       - name: Release manifest
         run: |
