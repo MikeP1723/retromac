@@ -1,6 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds build/retromac.app (ad-hoc signed).
+# Builds build/retromac.app: ad-hoc signed, or with RETROMAC_SIGN_IDENTITY (a Developer ID Application
+# identity in the keychain) signed for notarization, with the hardened runtime and a secure timestamp.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -29,6 +30,9 @@ fi
 # have to sit at the .app root, which breaks code signing).
 cp Sources/RetromacCore/Resources/*.json "$app/Contents/Resources/"
 # Inside out: the outer signature seals the nested app's.
-codesign --force --sign - "$agent"
-codesign --force --sign - "$app"
+identity="${RETROMAC_SIGN_IDENTITY:--}"
+flags=(--force --sign "$identity")
+[[ "$identity" != "-" ]] && flags+=(--options runtime --timestamp)
+codesign "${flags[@]}" "$agent"
+codesign "${flags[@]}" "$app"
 echo "$app"
