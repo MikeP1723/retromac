@@ -13,10 +13,12 @@ public enum ESDECollections {
             .joined(separator: "\n")
     }
 
-    /// The user's custom collections, named `custom-<name>.cfg` by ES-DE.
+    /// The user's custom collections, named `custom-<name>.cfg` by ES-DE. Plain files only: reading a folder
+    /// would stop the apply, and a link could lead outside ES-DE.
     static func files(paths: Paths) -> [URL] {
         let dir = paths.esdeRoot.appending(path: "collections")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         return names.filter { $0.hasPrefix("custom-") && $0.hasSuffix(".cfg") }.sorted().map { dir.appending(path: $0) }
+            .filter { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.type] as? FileAttributeType) == .typeRegular }
     }
 }
