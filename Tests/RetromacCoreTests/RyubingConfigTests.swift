@@ -51,3 +51,16 @@ private func object(_ json: String?) throws -> [String: Any] {
     #expect(RyubingConfig.merge(existing: ryubing, gameDir: "/lib/switch", replacing: nil) == ryubing)
     #expect(RyubingConfig.merge(existing: ryubing, gameDir: "/lib2/switch", replacing: "/lib/switch") != ryubing)
 }
+
+@Test func gameDirsWithAnOddEntryKeepEveryFolder() throws {
+    // A list retromac doesn't fully understand is still the user's: nothing in it is dropped.
+    let input = #"{"version":70,"game_dirs":["/mine",null,"/old/switch"]}"#
+    let out = try object(RyubingConfig.merge(existing: input, gameDir: "/new/switch", replacing: "/old/switch"))
+    let dirs = try #require(out["game_dirs"] as? [Any])
+    #expect(dirs.count == 3)
+    #expect(dirs[0] as? String == "/mine" && dirs[1] is NSNull && dirs[2] as? String == "/new/switch")
+}
+
+@Test func gameDirsThatIsNotAListWritesNothing() {
+    #expect(RyubingConfig.merge(existing: #"{"version":70,"game_dirs":"/mine"}"#, gameDir: "/lib/switch", replacing: nil) == nil)
+}
