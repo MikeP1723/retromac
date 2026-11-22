@@ -216,6 +216,30 @@ struct DittoDiesRunner: CommandRunner {
     #expect(try await installer(manifest(apps: [entry]), paths).install(systems: []).installed == ["fake"])
     #expect(try FileManager.default.contentsOfDirectory(atPath: apps.path) == ["Fake.app"])
 }
+/// Runs real commands, but a plain detach fails as it does while something still holds the volume.
+final class BusyDetachRunner: CommandRunner, @unchecked Sendable {
+    private(set) var mounts: [String] = []
+    func run(_ executable: String, _ args: [String], input: String?) throws -> String {
+        if executable == "/usr/bin/hdiutil", args.first == "attach", let i = args.firstIndex(of: "-mountpoint") {
+            mounts.append(args[i + 1])
+        }
+        if executable == "/usr/bin/hdiutil", args.first == "detach", !args.contains("-force") {
+            throw InstallError.commandFailed(executable, 16, "hdiutil: couldn't unmount - Resource busy")
+        }
+        return try ProcessRunner().run(executable, args, input: input)
+    }
+}
+@Test func busyImageIsStillDetached() async throws {
+    let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
+    let paths = Paths(home: dir.appending(path: "home"), applications: apps)
+    try FileManager.default.createDirectory(at: apps, withIntermediateDirectories: true)
+    let entry = try appEntry(makeAppDmg(in: dir)), runner = BusyDetachRunner()
+    let busy = Installer(manifest: manifest(apps: [entry]), paths: paths, downloader: host, runner: runner)
+    #expect(try await busy.install(systems: []).installed == ["fake"])
+    let info = try ProcessRunner().run("/usr/bin/hdiutil", ["info"])
+    #expect(runner.mounts.count == 1)
+    #expect(runner.mounts.allSatisfy { !info.contains($0) })
+}
 @Test func extractsRetroArchAssetsBeforeFirstLaunch() async throws {
     let dir = try makeTempDir(), apps = dir.appending(path: "Apps")
     let paths = Paths(home: dir.appending(path: "home"), applications: apps)

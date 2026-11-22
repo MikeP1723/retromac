@@ -210,7 +210,12 @@ public struct Installer: Sendable {
                 // Choosing to install the app is the acceptance; answer the prompt with Y.
                 try runner.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-mountpoint", mount.path, dmg.path],
                                input: String(repeating: "Y\n", count: 64))
-                defer { _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path]) }
+                // A plain detach fails while Spotlight or Finder still holds the volume; force it rather than leave it mounted.
+                defer {
+                    if (try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", mount.path])) == nil {
+                        _ = try? runner.run("/usr/bin/hdiutil", ["detach", "-quiet", "-force", mount.path])
+                    }
+                }
                 let source = mount.appending(path: app.appName)
                 guard fm.fileExists(atPath: source.path) else { throw InstallError.appNotFoundInImage(app.appName) }
                 try runner.run("/usr/bin/ditto", [source.path, staging.appending(path: app.appName).path])
