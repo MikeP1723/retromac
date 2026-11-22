@@ -17,5 +17,13 @@ for plist in "$app/Contents/Info.plist" "$app/Contents/Library/LoginItems/retrom
         exit 1
     fi
 done
+for resources in "$app/Contents/Resources" "$app/Contents/Library/LoginItems/retromac-console.app/Contents/Resources"; do
+    for file in Assets.car AppIcon.icns; do
+        if [[ ! -s "$resources/$file" ]]; then
+            echo "error: $resources/$file is missing (build with Xcode's actool)" >&2
+            exit 1
+        fi
+    done
+done
 codesign --verify --deep --strict "$app"
 echo "$app is release $version"
