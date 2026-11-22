@@ -10,11 +10,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift test
-      - name: Build and zip
+      - name: Import signing certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         run: |
-          RETROMAC_VERSION="${GITHUB_REF_NAME#v}" scripts/bundle.sh
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+      - name: Build, sign and notarize
+        env:
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          RETROMAC_VERSION="${GITHUB_REF_NAME#v}" RETROMAC_SIGN_IDENTITY="Developer ID Application" \
+            scripts/bundle.sh
           scripts/check-bundle.sh "${GITHUB_REF_NAME#v}"
+          codesign -dvv build/retromac.app 2>&1 | grep -q "TeamIdentifier=$MACOS_TEAM_ID"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent build/retromac.app notarize.zip
+          xcrun notarytool submit notarize.zip --wait \
+            --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+          rm "$RUNNER_TEMP/notary.p8" notarize.zip
+          xcrun stapler staple build/retromac.app
+          spctl --assess --type execute -vv build/retromac.app
           ditto -c -k --keepParent build/retromac.app retromac.zip
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
       - name: Release manifest
         run: |
           sha=$(shasum -a 256 retromac.zip | cut -d' ' -f1)
