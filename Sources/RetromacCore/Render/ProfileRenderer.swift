@@ -15,6 +15,8 @@ public struct RenderedFile: Equatable, Sendable {
         case tomlKeys([String: [String: TomlValue]])
         /// Ryubing's Config.json: retromac's keys and games folder merged in, or left alone (see RyubingConfig).
         case ryubingConfig(gameDir: String, replacing: String?)
+        /// An ES-DE custom collection: entries saved relative to the old ROMDirectory point at the library.
+        case esdeCollection(library: String)
         /// A file retromac owns entirely.
         case whole(String)
         case directory
@@ -111,6 +113,9 @@ public enum ProfileRenderer {
         files.append(RenderedFile(url: paths.esdeFindRules,
                                   kind: .whole(ESDESystems.findRules(paths: paths))))
         files.append(RenderedFile(url: paths.esdeCustomSystems, kind: .esdeSystems(ESDESystems.xml(for: esdeSystems(p, paths: paths, bios: bios), manifest: manifest, library: p.libraryRoot))))
+        for collection in ESDECollections.files(paths: paths) {
+            files.append(RenderedFile(url: collection, kind: .esdeCollection(library: p.libraryRoot.path)))
+        }
 
         // Console folders, never on a read-only network library.
         for system in p.systems where !p.isLibraryReadOnly {
